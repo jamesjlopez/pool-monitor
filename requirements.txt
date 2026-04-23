@@ -1,0 +1,9 @@
+requests>=2.31.0
+pyyaml>=6.0.0
+schedule>=1.2.2
+mitmproxy>=10.0.0
+pytest>=8.1.0
+pytest-mock>=3.14.0
+pycognito>=2022.12.0
+requests-aws4auth>=1.2.0
+boto3>=1.26.0

@@ -1,0 +1,7 @@
+{
+  "_note": "Pump in startup/priming phase — high RPM and watts, lower flow than steady state",
+  "rpm": 3000,
+  "watts": 650,
+  "gph": 1800,
+  "isRunning": true
+}

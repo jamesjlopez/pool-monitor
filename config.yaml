@@ -1,0 +1,60 @@
+# Pool Monitor Configuration
+
+# Pentair Home app credentials
+# Can also be set via environment variables: PENTAIR_EMAIL / PENTAIR_PASSWORD
+pentair:
+  email: ""        # your Pentair Home app login email
+  password: ""     # your Pentair Home app password (or use env var)
+
+pump:
+  poll_interval_seconds: 1800
+
+thresholds:
+  startup_grace_seconds: 120          # suppress alerts for 2 min after pump starts
+  consecutive_readings_required: 3    # require N readings in a row before alerting
+
+  # This pump runs in FLOW-CONTROL mode: it maintains target GPH by adjusting RPM.
+  # Clogging causes watts to rise (pump spins faster to hold the flow target).
+  #
+  # Calibration state (2026-04-19):
+  #   Low speed  — filter at 12 PSI (cleaning threshold): ~403W, 705 GPH → ratio = 0.57 W/GPH
+  #   High speed — filter at 18 PSI (below 20 PSI alert):  601W, 854 GPH (s19) → ratio = 0.70 W/GPH
+  #     App shows 16-17 GPM target (s16 ~960 GPH) — pump underperforms target through dirty filter
+  #   Filter clean (6 PSI low / ~10 PSI high): not yet measured — update baselines after next backwash
+  #
+  # Strategy: baseline is set to the 12 PSI "needs cleaning" reading.
+  #   alert fires if ratio rises 5%+ above that (i.e. filter getting worse than 12 PSI).
+  #   After cleaning the filter, reset baseline to the new clean reading for earlier warnings.
+
+  low_speed:
+    # Speed mode: pump program name contains "low", OR RPM < 1500
+    alert_psi: 12
+    emergency_psi: 18
+    baseline_watts_per_gph: 0.570     # observed at 12 PSI (cleaning threshold) — 2026-04-19
+    alert_ratio_pct: 5                # WARN if ratio >5% above baseline (filter past 12 PSI)
+    emergency_ratio_pct: 40           # CRITICAL if ratio >40% above baseline (severe blockage)
+
+  high_speed:
+    # Speed mode: pump program name contains "high", OR RPM >= 1500
+    alert_psi: 20
+    emergency_psi: 30
+    baseline_watts_per_gph: 0.704     # observed at ~18 PSI (below alert threshold) — 2026-04-19
+    alert_ratio_pct: 5
+    emergency_ratio_pct: 40
+
+  alert_cooldown_minutes: 30          # don't repeat same alert level within this window
+
+ntfy:
+  server: "https://ntfy.sh"
+  topic: "your-unique-topic-name"    # overridden by NTFY_TOPIC env var (set in .env)
+  priority_alert: "high"             # iOS notification (loud)
+  priority_emergency: "urgent"       # iOS critical alert (bypasses silent mode)
+
+emergency_shutoff:
+  enabled: true                      # shuts off pump after 3 fast-confirmed CRITICAL readings
+  consecutive_required: 1            # 1 confirmed CRITICAL output = shutoff (window itself requires 3 readings)
+  delay_seconds: 30
+
+logging:
+  level: "INFO"
+  file: "logs/pool_monitor.log"

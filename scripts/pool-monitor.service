@@ -1,0 +1,18 @@
+[Unit]
+Description=Pool Filter Monitor (polling daemon)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=james
+WorkingDirectory=/home/james/pool_monitor_project
+ExecStart=/home/james/pool_monitor_project/.venv/bin/python3 -m monitor.runner
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

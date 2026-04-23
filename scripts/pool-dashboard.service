@@ -1,0 +1,16 @@
+[Unit]
+Description=Pool Dashboard (static file server on :8080)
+After=network.target
+
+[Service]
+Type=simple
+User=james
+WorkingDirectory=/home/james/pool_monitor_project
+ExecStart=/home/james/pool_monitor_project/.venv/bin/python3 -m http.server 8080
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

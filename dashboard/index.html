@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pool Filter Monitor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --green:    #3fb950;
+    --yellow:   #d29922;
+    --red:      #f85149;
+    --blue:     #58a6ff;
+    --purple:   #bc8cff;
+    --orange:   #f0883e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 1rem;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  h1 { font-size: 1.05rem; font-weight: 600; white-space: nowrap; }
+
+  /* ── Status strip ── */
+  .status-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.55rem 0.9rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .status-badge {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .status-meta {
+    font-size: 0.8rem;
+    color: var(--muted);
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .status-divider {
+    width: 1px;
+    height: 1rem;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  .status-time {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-left: auto;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* ── Range selector ── */
+  .range-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    margin-bottom: 0.6rem;
+  }
+  .range-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.2rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .range-btn:hover  { background: var(--border); color: var(--text); }
+  .range-btn.active { background: var(--border); color: var(--text); border-color: var(--muted); }
+
+  /* ── Chart panels ── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem 0.75rem;
+    margin-bottom: 0.75rem;
+    min-width: 0;
+  }
+  .panel-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.65rem;
+  }
+  canvas { display: block; width: 100% !important; }
+
+  /* ── Empty state ── */
+  #empty { text-align: center; color: var(--muted); padding: 2.5rem 0; font-size: 0.9rem; display: none; }
+
+  /* ── Stale warning ── */
+  #stale-warning {
+    display: none;
+    font-size: 0.78rem;
+    color: var(--yellow);
+    background: rgba(210,153,34,0.1);
+    border: 1px solid rgba(210,153,34,0.3);
+    border-radius: 6px;
+    padding: 0.4rem 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  /* ── Issues log ── */
+  #error-panel { display: none; }
+  .issue-row {
+    display: flex;
+    gap: 0.6rem;
+    font-size: 0.78rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .issue-row:last-child { border-bottom: none; }
+  .issue-ts    { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+  .issue-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .issue-badge.warn  { background: rgba(210,153,34,0.18); color: var(--yellow); }
+  .issue-badge.crit  { background: rgba(248,81,73,0.18);  color: var(--red);    }
+  .issue-badge.error { background: rgba(248,81,73,0.12);  color: var(--red);    }
+  .issue-msg   { color: var(--text); min-width: 0; }
+  .issue-sub   { color: var(--muted); font-size: 0.72rem; width: 100%; padding-left: 0; margin-top: 0.1rem; }
+  .issue-unsent { color: var(--muted); font-style: italic; }
+
+  /* ── Status colours ── */
+  .ok   { color: var(--green);  }
+  .warn { color: var(--yellow); }
+  .crit { color: var(--red);    }
+
+  /* ── Responsive ── */
+  @media (max-width: 480px) {
+    body { padding: 0.65rem; }
+    #ratio-chart { height: 180px !important; }
+    #pf-chart    { height: 260px !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Pool Filter Monitor</h1>
+</header>
+
+<div class="status-strip">
+  <span class="status-badge ok" id="c-status">—</span>
+  <div class="status-divider"></div>
+  <span class="status-meta" id="c-mode">—</span>
+  <span class="status-time" id="last-updated">Loading…</span>
+</div>
+
+<p id="empty">No data yet — the monitor will populate this dashboard on its first poll.</p>
+
+<div class="range-row">
+  <button class="range-btn" data-days="7">7d</button>
+  <button class="range-btn active" data-days="14">14d</button>
+  <button class="range-btn" data-days="30">30d</button>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Filter Pressure Proxy — % above baseline</div>
+  <canvas id="ratio-chart" height="220"></canvas>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Estimated Daily Energy Cost</div>
+  <canvas id="cost-chart" height="100"></canvas>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Power &amp; Flow</div>
+  <canvas id="pf-chart" height="180"></canvas>
+</div>
+
+<div id="stale-warning">⚠️ Last reading is more than 45 minutes old — monitor may not be running</div>
+
+<div class="panel" id="error-panel">
+  <div class="panel-title">Recent Issues</div>
+  <div id="error-list"></div>
+</div>
+
+<script>
+// ── User-configurable constants ─────────────────────────────────────────────
+const KWH_RATE  = 0.12;   // $/kWh — update to match your electricity rate
+const POLL_HRS  = 0.5;    // each reading represents 30 minutes
+
+// Thresholds — keep in sync with config.yaml
+const ALERT_PCT = 5;
+const EMERG_PCT = 40;
+
+// ── Chart colours ───────────────────────────────────────────────────────────
+const LEVEL_COLOR = { normal: "#3fb950", warn: "#d29922", critical: "#f85149" };
+const GRID  = "rgba(48,54,61,0.8)";
+const TICK  = "#8b949e";
+const CSV           = "../logs/metrics.csv";
+const ERRORS        = "../logs/errors.json";
+const NOTIFICATIONS = "../logs/notifications.json";
+const STALE_MINUTES = 45;    // warn if last reading older than this
+const REFRESH_MS    = 5 * 60 * 1000;  // auto-refresh every 5 minutes (local files only, no API calls)
+
+// ── State ───────────────────────────────────────────────────────────────────
+let allRows    = [];
+let rangeDays  = 14;
+let ratioChart = null;
+let costChart  = null;
+let pfChart    = null;
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+async function init() {
+  let text;
+  try {
+    const r = await fetch(CSV + "?t=" + Date.now());
+    if (!r.ok) throw new Error(r.status);
+    text = await r.text();
+  } catch {
+    document.getElementById("last-updated").textContent = "Could not load metrics.csv";
+    document.getElementById("empty").style.display = "block";
+    return;
+  }
+
+  const lines = text.trim().split("\n");
+  if (lines.length < 2) { document.getElementById("empty").style.display = "block"; return; }
+
+  const hdrs = lines[0].split(",").map(h => h.trim());
+  allRows = lines.slice(1).map(line => {
+    const v = line.split(",");
+    const o = {};
+    hdrs.forEach((h, i) => o[h] = (v[i] || "").trim());
+    return {
+      ts:       o.timestamp,
+      watts:    +o.power_watts,
+      gph:      +o.flow_gph,
+      ratio:    o.watts_per_gph           ? +o.watts_per_gph           : null,
+      baseline: o.baseline_watts_per_gph  ? +o.baseline_watts_per_gph  : null,
+      mode:     o.speed_mode,
+      level:    o.alert_level,
+      rpm:      +o.rpm,
+    };
+  }).filter(r => r.ratio !== null);
+
+  if (!allRows.length) { document.getElementById("empty").style.display = "block"; return; }
+  render();
+  checkStale();
+  loadIssues();
+}
+
+// ── Stale data warning ────────────────────────────────────────────────────────
+function checkStale() {
+  if (!allRows.length) return;
+  const latest = new Date(allRows[allRows.length - 1].ts);
+  const ageMin = (Date.now() - latest) / 60000;
+  document.getElementById("stale-warning").style.display =
+    ageMin > STALE_MINUTES ? "block" : "none";
+}
+
+// ── Issues log (notifications + errors) ───────────────────────────────────────
+async function loadIssues() {
+  const t = Date.now();
+  const [errResp, notifResp] = await Promise.allSettled([
+    fetch(ERRORS        + "?t=" + t),
+    fetch(NOTIFICATIONS + "?t=" + t),
+  ]);
+
+  let errors = [], notifications = [];
+  try { if (errResp.status === "fulfilled"   && errResp.value.ok)   errors        = await errResp.value.json();   } catch {}
+  try { if (notifResp.status === "fulfilled" && notifResp.value.ok) notifications = await notifResp.value.json(); } catch {}
+
+  const items = [];
+
+  (errors || []).forEach(e => items.push({ ts: e.ts, kind: "error", msg: e.message }));
+
+  (notifications || []).forEach(n => items.push({
+    ts:    n.ts,
+    kind:  "notification",
+    level: n.level,
+    msg:   n.reason,
+    sub:   n.summary,
+    sent:  n.sent,
+  }));
+
+  if (!items.length) return;
+
+  items.sort((a, b) => b.ts.localeCompare(a.ts));
+  const recent = items.slice(0, 20);
+
+  const panel = document.getElementById("error-panel");
+  const list  = document.getElementById("error-list");
+
+  list.innerHTML = recent.map(item => {
+    if (item.kind === "error") {
+      return `
+        <div class="issue-row">
+          <span class="issue-ts">${fmtTime(item.ts)}</span>
+          <span class="issue-badge error">ERROR</span>
+          <span class="issue-msg">${item.msg}</span>
+        </div>`;
+    }
+    const badgeClass = item.level === "critical" ? "crit" : "warn";
+    const badgeLabel = item.level === "critical" ? "CRITICAL" : "WARN";
+    const sentNote   = item.sent ? "" : `<span class="issue-unsent">(suppressed — cooldown active)</span> `;
+    return `
+      <div class="issue-row">
+        <span class="issue-ts">${fmtTime(item.ts)}</span>
+        <span class="issue-badge ${badgeClass}">${badgeLabel}</span>
+        <span class="issue-msg">${sentNote}${item.msg}</span>
+        ${item.sub ? `<span class="issue-sub">${item.sub}</span>` : ""}
+      </div>`;
+  }).join("");
+
+  panel.style.display = "block";
+}
+
+// ── Auto-refresh (re-reads local CSV/errors only — no Pentair API calls) ─────
+setInterval(() => {
+  if (ratioChart) { ratioChart.destroy(); ratioChart = null; }
+  if (costChart)  { costChart.destroy();  costChart  = null; }
+  if (pfChart)    { pfChart.destroy();    pfChart    = null; }
+  allRows = [];
+  init();
+}, REFRESH_MS);
+
+// ── Range buttons ────────────────────────────────────────────────────────────
+document.querySelectorAll(".range-btn").forEach(btn => {
+  btn.addEventListener("click", e => {
+    document.querySelectorAll(".range-btn").forEach(b => b.classList.remove("active"));
+    e.currentTarget.classList.add("active");
+    rangeDays = +e.currentTarget.dataset.days;
+    render();
+  });
+});
+
+// ── Render all ───────────────────────────────────────────────────────────────
+function render() {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - rangeDays);
+  const rows = allRows.filter(r => new Date(r.ts) >= cutoff);
+  if (!rows.length) return;
+
+  updateStatus(rows[rows.length - 1]);
+  renderRatioChart(rows);
+  renderCostChart(rows);
+  renderPFChart(rows);
+}
+
+// ── Status strip ─────────────────────────────────────────────────────────────
+const STATUS_EMOJI = { normal: "\uD83D\uDFE2", warn: "\uD83D\uDFE1", critical: "\uD83D\uDD34" };
+
+function updateStatus(r) {
+  const badge = document.getElementById("c-status");
+  badge.textContent = (STATUS_EMOJI[r.level] || "") + " " + r.level.toUpperCase();
+  badge.className = "status-badge " + levelClass(r.level);
+
+  document.getElementById("c-mode").textContent = r.mode + " speed";
+  document.getElementById("last-updated").innerHTML =
+    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>' +
+    fmtTime(r.ts);
+}
+
+// ── Ratio chart ───────────────────────────────────────────────────────────────
+function renderRatioChart(rows) {
+  const labels    = rows.map(r => fmtTime(r.ts));
+  const pcts      = rows.map(r => r.baseline ? +((r.ratio / r.baseline - 1) * 100).toFixed(2) : 0);
+  const ptColors  = rows.map(r => LEVEL_COLOR[r.level] || LEVEL_COLOR.normal);
+  const alertLine = rows.map(() => ALERT_PCT);
+  const emergLine = rows.map(() => EMERG_PCT);
+
+  const datasets = [
+    {
+      label: "% above baseline",
+      data: pcts,
+      borderColor: "#58a6ff",
+      backgroundColor: "rgba(88,166,255,0.07)",
+      pointBackgroundColor: ptColors,
+      pointBorderColor: ptColors,
+      pointRadius: 3, pointHoverRadius: 5,
+      fill: true, tension: 0.3, order: 1,
+    },
+    {
+      label: `Alert (${ALERT_PCT}%)`,
+      data: alertLine,
+      borderColor: "rgba(210,153,34,0.65)",
+      borderDash: [5, 4], borderWidth: 1.5,
+      pointRadius: 0, fill: false, order: 2,
+    },
+    {
+      label: `Emergency (${EMERG_PCT}%)`,
+      data: emergLine,
+      borderColor: "rgba(248,81,73,0.65)",
+      borderDash: [5, 4], borderWidth: 1.5,
+      pointRadius: 0, fill: false, order: 3,
+    },
+  ];
+
+  if (ratioChart) {
+    ratioChart.data.labels = labels;
+    datasets.forEach((ds, i) => {
+      ratioChart.data.datasets[i].data = ds.data;
+    });
+    ratioChart.data.datasets[0].pointBackgroundColor = ptColors;
+    ratioChart.data.datasets[0].pointBorderColor     = ptColors;
+    ratioChart.update("none");
+    return;
+  }
+
+  ratioChart = new Chart(document.getElementById("ratio-chart"), {
+    type: "line", data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { color: TICK, boxWidth: 18, font: { size: 10 } } },
+        tooltip: {
+          backgroundColor: "#1c2128", borderColor: "#30363d", borderWidth: 1,
+          titleColor: "#e6edf3", bodyColor: "#8b949e",
+          callbacks: {
+            label: item => {
+              if (item.datasetIndex !== 0) return "  " + item.dataset.label;
+              const r = rows[item.dataIndex];
+              return [
+                `  ${item.raw >= 0 ? "+" : ""}${item.raw}% vs baseline`,
+                `  Ratio: ${r.ratio.toFixed(4)} W/GPH · ${r.level.toUpperCase()}`,
+              ];
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: TICK,
+            maxTicksLimit: window.innerWidth < 480 ? 0 : 7,
+            display: window.innerWidth >= 480,
+            font: { size: 10 },
+          },
+          grid: { color: GRID },
+        },
+        y: {
+          ticks: { color: TICK, font: { size: 10 }, callback: v => (v >= 0 ? "+" : "") + v + "%" },
+          grid: { color: GRID },
+        },
+      },
+    },
+  });
+}
+
+// ── Cost chart ────────────────────────────────────────────────────────────────
+function renderCostChart(rows) {
+  // Group readings by calendar date (YYYY-MM-DD)
+  const byDay = {};
+  rows.forEach(r => {
+    const day = r.ts.slice(0, 10);
+    if (!byDay[day]) byDay[day] = [];
+    byDay[day].push(r);
+  });
+
+  const days   = Object.keys(byDay).sort();
+  const labels = days.map(d => {
+    const dt = new Date(d + "T12:00:00");
+    return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  });
+
+  // For each day: sum actual energy cost and baseline energy cost
+  const actualCosts   = [];
+  const baselineCosts = [];
+  const extraCosts    = [];
+
+  days.forEach(d => {
+    const readings = byDay[d];
+    let actual = 0, baseline = 0;
+    readings.forEach(r => {
+      const kwh = r.watts * POLL_HRS / 1000;
+      actual += kwh * KWH_RATE;
+      if (r.baseline) {
+        const baseWatts = r.baseline * r.gph;
+        baseline += baseWatts * POLL_HRS / 1000 * KWH_RATE;
+      } else {
+        baseline += kwh * KWH_RATE; // no baseline — same as actual
+      }
+    });
+    const extra = Math.max(0, actual - baseline);
+    actualCosts.push(+actual.toFixed(4));
+    baselineCosts.push(+baseline.toFixed(4));
+    extraCosts.push(+extra.toFixed(4));
+  });
+
+  const datasets = [
+    {
+      label: "Baseline cost (12 PSI)",
+      data: baselineCosts,
+      backgroundColor: "rgba(88,166,255,0.55)",
+      borderColor: "rgba(88,166,255,0.8)",
+      borderWidth: 1, stack: "cost",
+    },
+    {
+      label: "Extra cost (above baseline)",
+      data: extraCosts,
+      backgroundColor: "rgba(240,136,62,0.65)",
+      borderColor: "rgba(240,136,62,0.9)",
+      borderWidth: 1, stack: "cost",
+    },
+  ];
+
+  if (costChart) {
+    costChart.data.labels = labels;
+    costChart.data.datasets[0].data = baselineCosts;
+    costChart.data.datasets[1].data = extraCosts;
+    costChart.update("none");
+    return;
+  }
+
+  costChart = new Chart(document.getElementById("cost-chart"), {
+    type: "bar", data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { color: TICK, boxWidth: 14, font: { size: 10 } } },
+        tooltip: {
+          backgroundColor: "#1c2128", borderColor: "#30363d", borderWidth: 1,
+          titleColor: "#e6edf3", bodyColor: "#8b949e",
+          callbacks: {
+            label: item => {
+              const label = item.dataset.label;
+              const val   = item.raw;
+              const total = actualCosts[item.dataIndex];
+              if (item.datasetIndex === 1) {
+                return [
+                  `  ${label}: $${val.toFixed(3)}`,
+                  `  Total actual: $${total.toFixed(3)} (@ $${KWH_RATE}/kWh)`,
+                ];
+              }
+              return `  ${label}: $${val.toFixed(3)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: TICK, font: { size: 10 } }, grid: { color: GRID }, stacked: true },
+        y: {
+          stacked: true,
+          ticks: { color: TICK, font: { size: 10 }, callback: v => "$" + v.toFixed(2) },
+          grid: { color: GRID },
+        },
+      },
+    },
+  });
+}
+
+// ── Power & Flow chart ────────────────────────────────────────────────────────
+function renderPFChart(rows) {
+  const labels    = rows.map(r => fmtTime(r.ts));
+  const wattsData = rows.map(r => r.watts);
+  const gphData   = rows.map(r => r.gph);
+
+  const datasets = [
+    {
+      label: "Watts", data: wattsData,
+      borderColor: "#58a6ff", backgroundColor: "rgba(88,166,255,0.06)",
+      fill: true, tension: 0.3, pointRadius: 2, yAxisID: "y",
+    },
+    {
+      label: "GPH", data: gphData,
+      borderColor: "#bc8cff", backgroundColor: "rgba(188,140,255,0.06)",
+      fill: true, tension: 0.3, pointRadius: 2, yAxisID: "y1",
+    },
+  ];
+
+  if (pfChart) {
+    pfChart.data.labels              = labels;
+    pfChart.data.datasets[0].data   = wattsData;
+    pfChart.data.datasets[1].data   = gphData;
+    pfChart.update("none");
+    return;
+  }
+
+  pfChart = new Chart(document.getElementById("pf-chart"), {
+    type: "line", data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { color: TICK, boxWidth: 18, font: { size: 10 } } },
+        tooltip: {
+          backgroundColor: "#1c2128", borderColor: "#30363d", borderWidth: 1,
+          titleColor: "#e6edf3", bodyColor: "#8b949e",
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: TICK,
+            maxTicksLimit: window.innerWidth < 480 ? 0 : 7,
+            display: window.innerWidth >= 480,
+            font: { size: 10 },
+          },
+          grid: { color: GRID },
+        },
+        y:  { position: "left",  ticks: { color: "#58a6ff", font: { size: 10 }, callback: v => v + "W"   }, grid: { color: GRID } },
+        y1: { position: "right", ticks: { color: "#bc8cff", font: { size: 10 }, callback: v => v + " GPH" }, grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtTime(ts) {
+  const d = new Date(ts);
+  if (isNaN(d)) return ts;
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function levelClass(l) {
+  return l === "normal" ? "ok" : l === "warn" ? "warn" : "crit";
+}
+
+init();
+</script>
+</body>
+</html>

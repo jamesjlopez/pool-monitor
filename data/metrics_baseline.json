@@ -1,0 +1,22 @@
+{
+  "description": "Baseline correlations between Power (W), GPH (gallons/hr), and PSI (pressure) under normal operating conditions",
+  "pump_model": "unknown",
+  "recorded_at": "2026-04-18",
+  "normal_ranges": {
+    "psi":         { "min": 8,    "max": 15,   "alert_high": 20, "alert_low": 5  },
+    "gph":         { "min": 3000, "max": 4500, "alert_low": 2000               },
+    "power_watts": { "min": 150,  "max": 800                                   }
+  },
+  "speed_profiles": [
+    { "label": "low",    "rpm": 1000, "power_watts": 150, "gph": 1800, "psi": 6  },
+    { "label": "medium", "rpm": 2000, "power_watts": 300, "gph": 3200, "psi": 10 },
+    { "label": "high",   "rpm": 2800, "power_watts": 600, "gph": 4200, "psi": 13 },
+    { "label": "max",    "rpm": 3450, "power_watts": 780, "gph": 4800, "psi": 15 }
+  ],
+  "anomaly_signatures": {
+    "clogged_filter": { "note": "High PSI, normal-or-low GPH, normal Power"  },
+    "air_in_system":  { "note": "Low PSI, low GPH, low Power"                },
+    "cavitation":     { "note": "Fluctuating PSI, low GPH, high Power"       },
+    "pump_overload":  { "note": "Normal PSI, low GPH, high Power"            }
+  }
+}
