@@ -1,7 +1,7 @@
 requests>=2.31.0
 pyyaml>=6.0.0
 schedule>=1.2.2
-mitmproxy>=10.0.0
+mitmproxy==9.0.1
 pytest>=8.1.0
 pytest-mock>=3.14.0
 pycognito>=2022.12.0

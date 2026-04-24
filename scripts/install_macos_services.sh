@@ -32,4 +32,4 @@ done
 
 echo ""
 echo "Services running. Check logs at $PROJECT/logs/"
-echo "Dashboard: http://localhost:8080/dashboard/"
+echo "Dashboard: http://localhost:8080/"

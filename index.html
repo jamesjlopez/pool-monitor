@@ -183,7 +183,7 @@
 <body>
 
 <header>
-  <h1>Pool Filter Monitor</h1>
+  <h1><img src="app-icon.png" alt="" style="height:60px;vertical-align:middle;margin-right:0.5rem;">Pool Filter Monitor</h1>
 </header>
 
 <div class="status-strip">
@@ -236,9 +236,9 @@ const EMERG_PCT = 40;
 const LEVEL_COLOR = { normal: "#3fb950", warn: "#d29922", critical: "#f85149" };
 const GRID  = "rgba(48,54,61,0.8)";
 const TICK  = "#8b949e";
-const CSV           = "../logs/metrics.csv";
-const ERRORS        = "../logs/errors.json";
-const NOTIFICATIONS = "../logs/notifications.json";
+const CSV           = "logs/metrics.csv";
+const ERRORS        = "logs/errors.json";
+const NOTIFICATIONS = "logs/notifications.json";
 const STALE_MINUTES = 45;    // warn if last reading older than this
 const REFRESH_MS    = 5 * 60 * 1000;  // auto-refresh every 5 minutes (local files only, no API calls)
 

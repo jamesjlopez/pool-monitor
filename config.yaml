@@ -46,7 +46,7 @@ thresholds:
 
 ntfy:
   server: "https://ntfy.sh"
-  topic: "your-unique-topic-name"    # overridden by NTFY_TOPIC env var (set in .env)
+  topic: "pool_monitor_project"    # overridden by NTFY_TOPIC env var (set in .env)
   priority_alert: "high"             # iOS notification (loud)
   priority_emergency: "urgent"       # iOS critical alert (bypasses silent mode)
 

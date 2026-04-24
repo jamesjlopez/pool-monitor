@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install_services.sh — install pool-monitor daemon + pool-dashboard static server
-# Serves dashboard at http://localhost:8080/dashboard/
+# Serves dashboard at http://localhost:8080/
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -70,7 +70,7 @@ for svc in pool-monitor pool-dashboard; do
 done
 
 echo ""
-echo "Done. Dashboard: http://localhost:8080/dashboard/"
+echo "Done. Dashboard: http://localhost:8080/"
 echo ""
 echo "Useful commands:"
 echo "  sudo systemctl status pool-monitor pool-dashboard"
