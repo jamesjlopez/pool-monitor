@@ -16,29 +16,30 @@ thresholds:
   # This pump runs in FLOW-CONTROL mode: it maintains target GPH by adjusting RPM.
   # Clogging causes watts to rise (pump spins faster to hold the flow target).
   #
-  # Calibration state (2026-04-19):
-  #   Low speed  — filter at 12 PSI (cleaning threshold): ~403W, 705 GPH → ratio = 0.57 W/GPH
-  #   High speed — filter at 18 PSI (below 20 PSI alert):  601W, 854 GPH (s19) → ratio = 0.70 W/GPH
-  #     App shows 16-17 GPM target (s16 ~960 GPH) — pump underperforms target through dirty filter
-  #   Filter clean (6 PSI low / ~10 PSI high): not yet measured — update baselines after next backwash
+  # This pump runs in FLOW-CONTROL mode: it adjusts RPM to maintain target flow.
+  # Clogging causes watts to rise while flow holds steady → ratio rises above baseline.
   #
-  # Strategy: baseline is set to the 12 PSI "needs cleaning" reading.
-  #   alert fires if ratio rises 5%+ above that (i.e. filter getting worse than 12 PSI).
-  #   After cleaning the filter, reset baseline to the new clean reading for earlier warnings.
+  # RECALIBRATION NEEDED: prior baselines used s19 (motor speed %, not actual flow).
+  # Now using s26 (tenths GPM — the real measured flow, ~13-17 GPM and fluctuating).
+  # Baselines are cleared until a post-backwash reading is captured.
+  #
+  # To recalibrate: after next backwash, let pump run 30 min, then check the monitor
+  # log for a stable reading. Set baseline_watts_per_gph = watts / flow_gph.
+  # Tip: set baseline at the "needs cleaning" PSI so alerts fire only when worse than that.
 
   low_speed:
     # Speed mode: pump program name contains "low", OR RPM < 1500
     alert_psi: 12
     emergency_psi: 18
-    baseline_watts_per_gph: 0.570     # observed at 12 PSI (cleaning threshold) — 2026-04-19
-    alert_ratio_pct: 5                # WARN if ratio >5% above baseline (filter past 12 PSI)
+    baseline_watts_per_gph:           # recalibrate after next backwash (old value 0.570 used wrong flow field)
+    alert_ratio_pct: 5                # WARN if ratio >5% above baseline
     emergency_ratio_pct: 40           # CRITICAL if ratio >40% above baseline (severe blockage)
 
   high_speed:
     # Speed mode: pump program name contains "high", OR RPM >= 1500
     alert_psi: 20
     emergency_psi: 30
-    baseline_watts_per_gph: 0.704     # observed at ~18 PSI (below alert threshold) — 2026-04-19
+    baseline_watts_per_gph:           # recalibrate after next backwash (old value 0.704 used wrong flow field)
     alert_ratio_pct: 5
     emergency_ratio_pct: 40
 

@@ -21,12 +21,6 @@ from .types import AlertLevel, EngineResult, PumpStatus
 
 log = logging.getLogger(__name__)
 
-# Default speed profile ratios (from Pentair IntelliFlo spec data, clean filter).
-# These are overridden by config.yaml baseline_watts_per_gph once user calibrates.
-_DEFAULT_BASELINES = {
-    "low": 0.083,   # ~150W / 1800 GPH at ~1000 RPM
-    "high": 0.143,  # ~600W / 4200 GPH at ~2800 RPM
-}
 
 
 class Engine:
@@ -69,6 +63,14 @@ class Engine:
                     speed_mode="off",
                     pending_elevated=True,
                 )
+            return EngineResult(level=AlertLevel.NORMAL, reason="Pump not running",
+                                speed_mode="off")
+
+        # Bogus reading: API returns stale RPM after pump stops while watts drops to 0.
+        # Treat as not running — do not evaluate or alert.
+        if status.power_watts == 0 and status.rpm > 0:
+            self._window.clear()
+            self._zero_flow_streak = 0
             return EngineResult(level=AlertLevel.NORMAL, reason="Pump not running",
                                 speed_mode="off")
 
@@ -125,7 +127,7 @@ class Engine:
         """Single-reading evaluation (before rolling window is applied)."""
         scfg = self._speed_cfg(status.speed_mode)
         ratio = status.watts_per_gph
-        baseline = scfg.get("baseline_watts_per_gph") or _DEFAULT_BASELINES.get(status.speed_mode)
+        baseline = scfg.get("baseline_watts_per_gph") or None
 
         level = AlertLevel.NORMAL
         reason = "Normal operation"
@@ -163,20 +165,11 @@ class Engine:
             else:
                 reason = f"Normal — ratio {ratio:.4f} W/GPH ({deviation_pct:+.0f}% vs baseline)"
         else:
-            # No calibrated baseline — fall back to absolute flow heuristics
-            low_flow_threshold = 1200 if status.speed_mode == "low" else 2500
-            if status.flow_gph < low_flow_threshold and status.power_watts > 200:
-                level = AlertLevel.WARN
-                reason = (
-                    f"Low flow ({status.flow_gph:.0f} GPH) with high power "
-                    f"({status.power_watts:.0f}W) — possible blockage. "
-                    f"Calibrate baseline_watts_per_gph in config.yaml for better detection."
-                )
-            else:
-                reason = (
-                    f"Flow {status.flow_gph:.0f} GPH, power {status.power_watts:.0f}W "
-                    f"(no baseline calibrated — set baseline_watts_per_gph in config.yaml)"
-                )
+            # No calibrated baseline — report NORMAL only; cannot detect clogging without baseline
+            reason = (
+                f"Flow {status.flow_gph:.0f} GPH, power {status.power_watts:.0f}W "
+                f"(no baseline — set baseline_watts_per_gph in config.yaml after next backwash)"
+            )
 
         return EngineResult(
             level=level,

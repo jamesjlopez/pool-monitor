@@ -212,7 +212,7 @@
 </div>
 
 <div class="panel">
-  <div class="panel-title">Power &amp; Flow</div>
+  <div class="panel-title">Power &amp; Flow (GPM)</div>
   <canvas id="pf-chart" height="180"></canvas>
 </div>
 
@@ -274,6 +274,7 @@ async function init() {
       ts:       o.timestamp,
       watts:    +o.power_watts,
       gph:      +o.flow_gph,
+      gpm:      o.flow_gph ? +o.flow_gph / 60 : null,
       ratio:    o.watts_per_gph           ? +o.watts_per_gph           : null,
       baseline: o.baseline_watts_per_gph  ? +o.baseline_watts_per_gph  : null,
       mode:     o.speed_mode,
@@ -594,7 +595,7 @@ function renderCostChart(rows) {
 function renderPFChart(rows) {
   const labels    = rows.map(r => fmtTime(r.ts));
   const wattsData = rows.map(r => r.watts);
-  const gphData   = rows.map(r => r.gph);
+  const gpmData   = rows.map(r => r.gpm !== null ? +r.gpm.toFixed(1) : null);
 
   const datasets = [
     {
@@ -603,7 +604,7 @@ function renderPFChart(rows) {
       fill: true, tension: 0.3, pointRadius: 2, yAxisID: "y",
     },
     {
-      label: "GPH", data: gphData,
+      label: "GPM", data: gpmData,
       borderColor: "#bc8cff", backgroundColor: "rgba(188,140,255,0.06)",
       fill: true, tension: 0.3, pointRadius: 2, yAxisID: "y1",
     },
@@ -612,7 +613,7 @@ function renderPFChart(rows) {
   if (pfChart) {
     pfChart.data.labels              = labels;
     pfChart.data.datasets[0].data   = wattsData;
-    pfChart.data.datasets[1].data   = gphData;
+    pfChart.data.datasets[1].data   = gpmData;
     pfChart.update("none");
     return;
   }
@@ -640,7 +641,7 @@ function renderPFChart(rows) {
           grid: { color: GRID },
         },
         y:  { position: "left",  ticks: { color: "#58a6ff", font: { size: 10 }, callback: v => v + "W"   }, grid: { color: GRID } },
-        y1: { position: "right", ticks: { color: "#bc8cff", font: { size: 10 }, callback: v => v + " GPH" }, grid: { drawOnChartArea: false } },
+        y1: { position: "right", ticks: { color: "#bc8cff", font: { size: 10 }, callback: v => v + " GPM" }, grid: { drawOnChartArea: false } },
       },
     },
   });

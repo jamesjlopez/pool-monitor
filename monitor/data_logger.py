@@ -31,7 +31,7 @@ class DataLogger:
                 csv.writer(f).writerow(COLUMNS)
 
     def log(self, status: PumpStatus, result: EngineResult) -> None:
-        if not status.is_running or status.rpm == 0 or status.flow_gph <= 0:
+        if not status.is_running or status.rpm == 0 or status.flow_gph <= 0 or status.power_watts == 0:
             return
         row = [
             datetime.now().isoformat(timespec="seconds"),

@@ -8,10 +8,11 @@ for live pump telemetry (RPM, watts, flow GPH).
 Field mapping (reverse-engineered from API response):
   s3   = running state (1 = on)
   s14  = active program index, 0-based (0 = zp1, 1 = zp2 "Low speed", 2 = zp3 "High speed")
-  s16  = target flow setpoint (GPH)
+  s16  = active setpoint value (unit depends on s15 reference type)
   s17  = actual RPM
   s18  = actual power (watts)
-  s19  = actual flow (GPH)
+  s19  = current motor speed (tenths %) — NOT flow; 705 = 70.5% speed
+  s26  = current estimated flow (tenths GPM) — 139 = 13.9 GPM; fluctuates under load
 
 Control fields (writable via PUT):
   d25          = master Pump Status switch (1 = enabled, 0 = disabled — prevents scheduled restarts)
@@ -284,7 +285,7 @@ def _parse_status(device_data: dict) -> PumpStatus:
     is_running  = int(fval("s3", 0)) == 1
     rpm         = int(fval("s17", 0))
     power_watts = fval("s18", 0.0)
-    flow_gph    = fval("s19", 0.0)     # actual achieved flow
+    flow_gph    = fval("s26", 0.0) / 10.0 * 60.0  # s26: tenths GPM → GPH
     target_gph  = fval("s16", 0.0)     # program setpoint
     prog_idx    = int(fval("s14", 0))  # 0-based active program
 
