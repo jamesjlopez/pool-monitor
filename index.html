@@ -202,7 +202,7 @@
 </div>
 
 <div class="panel">
-  <div class="panel-title">Filter Pressure Proxy — % above baseline</div>
+  <div class="panel-title">Hydraulic Restriction Proxy — % above current clean baseline</div>
   <canvas id="ratio-chart" height="220"></canvas>
 </div>
 
@@ -228,14 +228,11 @@
 const KWH_RATE  = 0.12;   // $/kWh — update to match your electricity rate
 const POLL_HRS  = 0.5;    // each reading represents 30 minutes
 
-// Thresholds — keep in sync with config.yaml
-const ALERT_PCT = 5;
-const EMERG_PCT = 40;
-
 // ── Chart colours ───────────────────────────────────────────────────────────
 const LEVEL_COLOR = { normal: "#3fb950", warn: "#d29922", critical: "#f85149" };
 const GRID  = "rgba(48,54,61,0.8)";
 const TICK  = "#8b949e";
+const CONFIG        = "config.yaml";
 const CSV           = "logs/metrics.csv";
 const ERRORS        = "logs/errors.json";
 const NOTIFICATIONS = "logs/notifications.json";
@@ -248,14 +245,17 @@ let rangeDays  = 14;
 let ratioChart = null;
 let costChart  = null;
 let pfChart    = null;
+let dashboardConfig = defaultDashboardConfig();
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 async function init() {
   let text;
   try {
-    const r = await fetch(CSV + "?t=" + Date.now());
-    if (!r.ok) throw new Error(r.status);
-    text = await r.text();
+    const t = Date.now();
+    dashboardConfig = await loadDashboardConfig(t);
+    const csvResp = await fetch(CSV + "?t=" + t);
+    if (!csvResp.ok) throw new Error(csvResp.status);
+    text = await csvResp.text();
   } catch {
     document.getElementById("last-updated").textContent = "Could not load metrics.csv";
     document.getElementById("empty").style.display = "block";
@@ -276,12 +276,14 @@ async function init() {
       gph:      +o.flow_gph,
       gpm:      o.flow_gph ? +o.flow_gph / 60 : null,
       ratio:    o.watts_per_gph           ? +o.watts_per_gph           : null,
-      baseline: o.baseline_watts_per_gph  ? +o.baseline_watts_per_gph  : null,
+      rowBaseline: o.baseline_watts_per_gph ? +o.baseline_watts_per_gph : null,
       mode:     o.speed_mode,
       level:    o.alert_level,
       rpm:      +o.rpm,
     };
   }).filter(r => r.ratio !== null);
+
+  annotateRows(allRows);
 
   if (!allRows.length) { document.getElementById("empty").style.display = "block"; return; }
   render();
@@ -404,10 +406,10 @@ function updateStatus(r) {
 // ── Ratio chart ───────────────────────────────────────────────────────────────
 function renderRatioChart(rows) {
   const labels    = rows.map(r => fmtTime(r.ts));
-  const pcts      = rows.map(r => r.baseline ? +((r.ratio / r.baseline - 1) * 100).toFixed(2) : 0);
-  const ptColors  = rows.map(r => LEVEL_COLOR[r.level] || LEVEL_COLOR.normal);
-  const alertLine = rows.map(() => ALERT_PCT);
-  const emergLine = rows.map(() => EMERG_PCT);
+  const pcts      = rows.map(r => r.pct);
+  const ptColors  = rows.map(r => LEVEL_COLOR[r.effectiveLevel]);
+  const alertLine = rows.map(r => speedCfg(r.mode).alertPct);
+  const emergLine = rows.map(r => speedCfg(r.mode).emergencyPct);
 
   const datasets = [
     {
@@ -421,14 +423,14 @@ function renderRatioChart(rows) {
       fill: true, tension: 0.3, order: 1,
     },
     {
-      label: `Alert (${ALERT_PCT}%)`,
+      label: thresholdLabel("Alert", rows, "alertPct"),
       data: alertLine,
       borderColor: "rgba(210,153,34,0.65)",
       borderDash: [5, 4], borderWidth: 1.5,
       pointRadius: 0, fill: false, order: 2,
     },
     {
-      label: `Emergency (${EMERG_PCT}%)`,
+      label: thresholdLabel("Emergency", rows, "emergencyPct"),
       data: emergLine,
       borderColor: "rgba(248,81,73,0.65)",
       borderDash: [5, 4], borderWidth: 1.5,
@@ -439,6 +441,7 @@ function renderRatioChart(rows) {
   if (ratioChart) {
     ratioChart.data.labels = labels;
     datasets.forEach((ds, i) => {
+      ratioChart.data.datasets[i].label = ds.label;
       ratioChart.data.datasets[i].data = ds.data;
     });
     ratioChart.data.datasets[0].pointBackgroundColor = ptColors;
@@ -463,7 +466,8 @@ function renderRatioChart(rows) {
               const r = rows[item.dataIndex];
               return [
                 `  ${item.raw >= 0 ? "+" : ""}${item.raw}% vs baseline`,
-                `  Ratio: ${r.ratio.toFixed(4)} W/GPH · ${r.level.toUpperCase()}`,
+                `  Ratio: ${r.ratio.toFixed(4)} W/GPH · baseline ${r.baseline ? r.baseline.toFixed(4) : "n/a"}`,
+                `  Raw: ${r.rawLevel.toUpperCase()} · Alert state: ${r.effectiveLevel.toUpperCase()}`,
               ];
             },
           },
@@ -530,7 +534,7 @@ function renderCostChart(rows) {
 
   const datasets = [
     {
-      label: "Baseline cost (12 PSI)",
+      label: "Baseline cost (clean filter)",
       data: baselineCosts,
       backgroundColor: "rgba(88,166,255,0.55)",
       borderColor: "rgba(88,166,255,0.8)",
@@ -656,6 +660,117 @@ function fmtTime(ts) {
 
 function levelClass(l) {
   return l === "normal" ? "ok" : l === "warn" ? "warn" : "crit";
+}
+
+function defaultDashboardConfig() {
+  return {
+    consecutiveReadingsRequired: 3,
+    speeds: {
+      low:  { baseline: null, alertPct: 65, emergencyPct: 300 },
+      high: { baseline: null, alertPct: 65, emergencyPct: 300 },
+    },
+  };
+}
+
+async function loadDashboardConfig(cacheBust) {
+  const fallback = defaultDashboardConfig();
+  try {
+    const resp = await fetch(CONFIG + "?t=" + cacheBust);
+    if (!resp.ok) return fallback;
+    return parseDashboardConfig(await resp.text(), fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function parseDashboardConfig(text, cfg) {
+  let section = "";
+  let speed = null;
+
+  text.split("\n").forEach(rawLine => {
+    const line = rawLine.split("#")[0].trimEnd();
+    if (!line.trim()) return;
+
+    if (/^thresholds:\s*$/.test(line)) {
+      section = "thresholds";
+      speed = null;
+      return;
+    }
+
+    if (section !== "thresholds") return;
+
+    let match = line.match(/^  consecutive_readings_required:\s*([0-9.]+)/);
+    if (match) {
+      cfg.consecutiveReadingsRequired = +match[1];
+      return;
+    }
+
+    match = line.match(/^  (low_speed|high_speed):\s*$/);
+    if (match) {
+      speed = match[1] === "low_speed" ? "low" : "high";
+      return;
+    }
+
+    if (!speed) return;
+
+    match = line.match(/^    baseline_watts_per_gph:\s*([0-9.]+)/);
+    if (match) {
+      cfg.speeds[speed].baseline = +match[1];
+      return;
+    }
+
+    match = line.match(/^    alert_ratio_pct:\s*([0-9.]+)/);
+    if (match) {
+      cfg.speeds[speed].alertPct = +match[1];
+      return;
+    }
+
+    match = line.match(/^    emergency_ratio_pct:\s*([0-9.]+)/);
+    if (match) cfg.speeds[speed].emergencyPct = +match[1];
+  });
+
+  return cfg;
+}
+
+function speedCfg(mode) {
+  return dashboardConfig.speeds[mode] || dashboardConfig.speeds.low;
+}
+
+function annotateRows(rows) {
+  const window = [];
+  rows.forEach(r => {
+    const cfg = speedCfg(r.mode);
+    r.baseline = cfg.baseline || r.rowBaseline || null;
+    r.pct = r.baseline ? +((r.ratio / r.baseline - 1) * 100).toFixed(2) : 0;
+    r.rawLevel = rawLevelForPct(r.pct, r.mode);
+
+    window.push(r.rawLevel);
+    if (window.length > dashboardConfig.consecutiveReadingsRequired) window.shift();
+
+    r.effectiveLevel = "normal";
+    if (window.length >= dashboardConfig.consecutiveReadingsRequired) {
+      if (window.every(level => level === "critical")) {
+        r.effectiveLevel = "critical";
+      } else if (window.every(level => level === "warn" || level === "critical")) {
+        r.effectiveLevel = "warn";
+      }
+    }
+  });
+}
+
+function rawLevelForPct(pct, mode) {
+  const cfg = speedCfg(mode);
+  if (pct >= cfg.emergencyPct) return "critical";
+  if (pct >= cfg.alertPct) return "warn";
+  return "normal";
+}
+
+function thresholdLabel(label, rows, key) {
+  const values = rows
+    .map(r => speedCfg(r.mode)[key])
+    .filter(v => Number.isFinite(v));
+  const uniqueValues = [...new Set(values)];
+  return uniqueValues.length === 1 ? `${label} (${uniqueValues[0]}%)` : `${label} (per mode)`;
 }
 
 init();

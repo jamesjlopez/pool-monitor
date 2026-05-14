@@ -45,15 +45,20 @@ class Engine:
     def mark_pump_start(self):
         """Call when the pump transitions from off→on to start the grace period."""
         self._pump_start_time = time.time()
-        self._window.clear()
         self._zero_flow_streak = 0
         log.info("Pump start detected — grace period active for %ds", self._grace_seconds)
 
     def process(self, status: PumpStatus) -> EngineResult:
         """Evaluate one reading and return the effective alert level."""
         if not status.is_running or status.rpm == 0:
-            self._window.clear()
             self._zero_flow_streak = 0
+            if status.is_running and status.rpm == 0:
+                return EngineResult(
+                    level=AlertLevel.NORMAL,
+                    reason=self._zero_telemetry_reason(status),
+                    speed_mode="off",
+                    pending_elevated=True,
+                )
             # Contradictory reading: API says not running / RPM=0 but reports non-zero
             # watts or flow — likely a transitional API glitch. Re-poll to get a valid read.
             if status.rpm == 0 and (status.power_watts > 0 or status.flow_gph > 0):
@@ -69,7 +74,6 @@ class Engine:
         # Bogus reading: API returns stale RPM after pump stops while watts drops to 0.
         # Treat as not running — do not evaluate or alert.
         if status.power_watts == 0 and status.rpm > 0:
-            self._window.clear()
             self._zero_flow_streak = 0
             return EngineResult(level=AlertLevel.NORMAL, reason="Pump not running",
                                 speed_mode="off")
@@ -122,6 +126,20 @@ class Engine:
     def _speed_cfg(self, speed_mode: str) -> dict:
         key = "low_speed" if speed_mode == "low" else "high_speed"
         return self._cfg[key]
+
+    def _zero_telemetry_reason(self, status: PumpStatus) -> str:
+        snapshot = status.raw.get("fields_snapshot", {})
+        appuse = snapshot.get("appuse")
+        d25 = snapshot.get("d25")
+        if appuse == "0" or d25 == "0":
+            return (
+                "Pentair cloud reports pump status switch disabled "
+                "(d25/appuse=0) and zero telemetry — cannot calibrate"
+            )
+        return (
+            "Pentair cloud reports running state but zero RPM/watts/flow — "
+            "awaiting valid telemetry"
+        )
 
     def _evaluate(self, status: PumpStatus) -> EngineResult:
         """Single-reading evaluation (before rolling window is applied)."""
@@ -218,6 +236,18 @@ class Engine:
                 watts_per_gph=latest.watts_per_gph,
                 baseline_watts_per_gph=latest.baseline_watts_per_gph,
                 consecutive_count=count,
+            )
+        # Window consensus is NORMAL but this reading is elevated — re-poll soon to
+        # confirm or clear it rather than waiting the full interval.
+        if latest.level > AlertLevel.NORMAL:
+            return EngineResult(
+                level=AlertLevel.NORMAL,
+                reason=latest.reason,
+                speed_mode=latest.speed_mode,
+                watts_per_gph=latest.watts_per_gph,
+                baseline_watts_per_gph=latest.baseline_watts_per_gph,
+                consecutive_count=count,
+                pending_elevated=True,
             )
         return EngineResult(
             level=AlertLevel.NORMAL,

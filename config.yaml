@@ -19,29 +19,27 @@ thresholds:
   # This pump runs in FLOW-CONTROL mode: it adjusts RPM to maintain target flow.
   # Clogging causes watts to rise while flow holds steady → ratio rises above baseline.
   #
-  # RECALIBRATION NEEDED: prior baselines used s19 (motor speed %, not actual flow).
-  # Now using s26 (tenths GPM — the real measured flow, ~13-17 GPM and fluctuating).
-  # Baselines are cleared until a post-backwash reading is captured.
+  # Prior baselines used s19 (motor speed %, not actual flow).
+  # Now using s26 (tenths GPM — the real measured flow).
   #
-  # To recalibrate: after next backwash, let pump run 30 min, then check the monitor
+  # To recalibrate: after cleaning, let pump run 30 min, then check the monitor
   # log for a stable reading. Set baseline_watts_per_gph = watts / flow_gph.
-  # Tip: set baseline at the "needs cleaning" PSI so alerts fire only when worse than that.
 
   low_speed:
     # Speed mode: pump program name contains "low", OR RPM < 1500
     alert_psi: 12
     emergency_psi: 18
-    baseline_watts_per_gph:           # recalibrate after next backwash (old value 0.570 used wrong flow field)
-    alert_ratio_pct: 5                # WARN if ratio >5% above baseline
-    emergency_ratio_pct: 40           # CRITICAL if ratio >40% above baseline (severe blockage)
+    baseline_watts_per_gph: 0.1536    # clean-filter reading 2026-05-14 08:39 CDT: 539W / 3510 GPH
+    alert_ratio_pct: 65               # WARN if ratio >65% above clean baseline
+    emergency_ratio_pct: 300          # CRITICAL if ratio >300% above clean baseline
 
   high_speed:
     # Speed mode: pump program name contains "high", OR RPM >= 1500
     alert_psi: 20
     emergency_psi: 30
-    baseline_watts_per_gph:           # recalibrate after next backwash (old value 0.704 used wrong flow field)
-    alert_ratio_pct: 5
-    emergency_ratio_pct: 40
+    baseline_watts_per_gph: 0.1929   # clean-filter reading 2026-05-14 08:42 CDT: 808W / 4188 GPH
+    alert_ratio_pct: 65
+    emergency_ratio_pct: 300
 
   alert_cooldown_minutes: 30          # don't repeat same alert level within this window
 

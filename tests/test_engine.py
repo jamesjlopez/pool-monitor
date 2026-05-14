@@ -103,6 +103,20 @@ class TestNormalOperation:
         assert result.level == AlertLevel.NORMAL
         assert result.speed_mode == "off"
 
+    def test_cloud_disabled_zero_telemetry_is_explicit(self):
+        engine = Engine(CALIBRATED_CONFIG)
+        status = PumpStatus(
+            rpm=0,
+            power_watts=0,
+            flow_gph=0,
+            is_running=True,
+            raw={"fields_snapshot": {"appuse": "0", "d25": "0"}},
+        )
+        result = engine.process(status)
+        assert result.level == AlertLevel.NORMAL
+        assert result.pending_elevated
+        assert "status switch disabled" in result.reason
+
 
 class TestWarnThreshold:
     def test_warn_fires_after_3_consecutive_readings(self):
@@ -168,14 +182,27 @@ class TestGracePeriod:
         result = engine.process(clogged)
         assert result.level != AlertLevel.NORMAL
 
-    def test_window_clears_on_pump_start(self):
+    def test_window_persists_across_pump_start(self):
+        engine = Engine({
+            "thresholds": {
+                **CALIBRATED_CONFIG["thresholds"],
+                "startup_grace_seconds": 0,
+            }
+        })
+        clogged = make_status(rpm=1050, watts=195, gph=1100)
+        feed_n(engine, clogged, 2)  # partial elevated window
+        engine.mark_pump_start()
+        result = engine.process(clogged)
+        assert result.level >= AlertLevel.WARN
+
+    def test_window_persists_across_pump_off(self):
         engine = Engine(CALIBRATED_CONFIG)
         clogged = make_status(rpm=1050, watts=195, gph=1100)
-        feed_n(engine, clogged, 3)  # fill window with warn readings
-        engine.mark_pump_start()    # restart clears window
-        # Grace period active — everything should be NORMAL
+        feed_n(engine, clogged, 2)
+        off = make_status(rpm=0, watts=0, gph=0, running=False)
+        assert engine.process(off).level == AlertLevel.NORMAL
         result = engine.process(clogged)
-        assert result.level == AlertLevel.NORMAL
+        assert result.level >= AlertLevel.WARN
 
 
 class TestUncalibratedMode:

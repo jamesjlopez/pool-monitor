@@ -311,7 +311,10 @@ def _parse_status(device_data: dict) -> PumpStatus:
             "prog_name": prog_name,
             "target_gph": target_gph,
             "fields_snapshot": {k: fields[k].get("value") if isinstance(fields[k], dict)
-                                else fields[k] for k in ("s3","s14","s16","s17","s18","s19")
+                                else fields[k] for k in (
+                                    "appuse", "d25", "s3", "s14", "s16",
+                                    "s17", "s18", "s19", "s26",
+                                )
                                 if k in fields},
         },
     )
