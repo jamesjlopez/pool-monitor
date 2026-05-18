@@ -41,6 +41,20 @@
     flex-wrap: wrap;
   }
   h1 { font-size: 1.05rem; font-weight: 600; white-space: nowrap; }
+  .desktop-alert-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.3rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .desktop-alert-btn:hover,
+  .desktop-alert-btn.active {
+    background: var(--border);
+    color: var(--text);
+  }
 
   /* ── Status strip ── */
   .status-strip {
@@ -138,7 +152,7 @@
     margin-bottom: 0.75rem;
   }
 
-  /* ── Issues log ── */
+  /* ── Alerts and issues logs ── */
   #error-panel { display: none; }
   .issue-row {
     display: flex;
@@ -163,9 +177,11 @@
   .issue-badge.warn  { background: rgba(210,153,34,0.18); color: var(--yellow); }
   .issue-badge.crit  { background: rgba(248,81,73,0.18);  color: var(--red);    }
   .issue-badge.error { background: rgba(248,81,73,0.12);  color: var(--red);    }
+  .issue-badge.info  { background: rgba(88,166,255,0.14);  color: var(--blue);   }
   .issue-msg   { color: var(--text); min-width: 0; }
   .issue-sub   { color: var(--muted); font-size: 0.72rem; width: 100%; padding-left: 0; margin-top: 0.1rem; }
   .issue-unsent { color: var(--muted); font-style: italic; }
+  .empty-log { color: var(--muted); font-size: 0.78rem; }
 
   /* ── Status colours ── */
   .ok   { color: var(--green);  }
@@ -184,6 +200,7 @@
 
 <header>
   <h1><img src="app-icon.png" alt="" style="height:60px;vertical-align:middle;margin-right:0.5rem;">Pool Filter Monitor</h1>
+  <button class="desktop-alert-btn" id="desktop-alerts" type="button" hidden>Desktop alerts</button>
 </header>
 
 <div class="status-strip">
@@ -192,6 +209,8 @@
   <span class="status-meta" id="c-mode">—</span>
   <span class="status-time" id="last-updated">Loading…</span>
 </div>
+
+<div id="stale-warning">⚠️ Last reading is more than 45 minutes old — monitor may not be running</div>
 
 <p id="empty">No data yet — the monitor will populate this dashboard on its first poll.</p>
 
@@ -216,7 +235,10 @@
   <canvas id="pf-chart" height="180"></canvas>
 </div>
 
-<div id="stale-warning">⚠️ Last reading is more than 45 minutes old — monitor may not be running</div>
+<div class="panel" id="alerts-panel">
+  <div class="panel-title">Recent Alerts</div>
+  <div id="alerts-list"><div class="empty-log">Loading alerts...</div></div>
+</div>
 
 <div class="panel" id="error-panel">
   <div class="panel-title">Recent Issues</div>
@@ -238,6 +260,9 @@ const ERRORS        = "logs/errors.json";
 const NOTIFICATIONS = "logs/notifications.json";
 const STALE_MINUTES = 45;    // warn if last reading older than this
 const REFRESH_MS    = 5 * 60 * 1000;  // auto-refresh every 5 minutes (local files only, no API calls)
+const MAX_ALERTS    = 10;
+const DESKTOP_ALERTS_KEY = "poolMonitorDesktopAlerts";
+const DESKTOP_ALERT_TS_KEY = "poolMonitorLastDesktopAlertTs";
 
 // ── State ───────────────────────────────────────────────────────────────────
 let allRows    = [];
@@ -246,6 +271,8 @@ let ratioChart = null;
 let costChart  = null;
 let pfChart    = null;
 let dashboardConfig = defaultDashboardConfig();
+let desktopAlertsEnabled = false;
+let alertHistoryLoaded = false;
 
 // ── Boot ────────────────────────────────────────────────────────────────────
 async function init() {
@@ -300,7 +327,7 @@ function checkStale() {
     ageMin > STALE_MINUTES ? "block" : "none";
 }
 
-// ── Issues log (notifications + errors) ───────────────────────────────────────
+// ── Alert and issue logs ──────────────────────────────────────────────────────
 async function loadIssues() {
   const t = Date.now();
   const [errResp, notifResp] = await Promise.allSettled([
@@ -312,49 +339,153 @@ async function loadIssues() {
   try { if (errResp.status === "fulfilled"   && errResp.value.ok)   errors        = await errResp.value.json();   } catch {}
   try { if (notifResp.status === "fulfilled" && notifResp.value.ok) notifications = await notifResp.value.json(); } catch {}
 
-  const items = [];
+  const alertEvents = buildAlertEvents(notifications || []);
+  renderAlertHistory(alertEvents);
+  maybeSendDesktopNotifications(alertEvents);
+  renderErrors(errors || []);
+}
 
-  (errors || []).forEach(e => items.push({ ts: e.ts, kind: "error", msg: e.message }));
+function buildAlertEvents(notifications) {
+  const byKey = new Map();
 
-  (notifications || []).forEach(n => items.push({
-    ts:    n.ts,
-    kind:  "notification",
-    level: n.level,
-    msg:   n.reason,
-    sub:   n.summary,
-    sent:  n.sent,
-  }));
+  allRows
+    .filter(r => r.level && r.level !== "normal")
+    .forEach(r => byKey.set(alertKey(r), {
+      ts: r.ts,
+      level: r.level,
+      msg: "Logged elevated reading",
+      sub: `${r.mode} speed · ratio ${r.ratio.toFixed(4)} W/GPH · ${r.pct >= 0 ? "+" : ""}${r.pct}% vs baseline`,
+      source: "metric",
+    }));
 
-  if (!items.length) return;
+  notifications
+    .filter(n => n.level && n.level !== "normal")
+    .forEach(n => byKey.set(alertKey(n), {
+      ts: n.ts,
+      level: n.level,
+      msg: n.reason,
+      sub: n.summary,
+      sent: n.sent,
+      source: "notification",
+    }));
 
-  items.sort((a, b) => b.ts.localeCompare(a.ts));
-  const recent = items.slice(0, 20);
+  return [...byKey.values()].sort((a, b) => b.ts.localeCompare(a.ts));
+}
 
-  const panel = document.getElementById("error-panel");
-  const list  = document.getElementById("error-list");
+function alertKey(item) {
+  return `${(item.ts || "").slice(0, 16)}-${item.level || ""}`;
+}
+
+function renderAlertHistory(events) {
+  const list = document.getElementById("alerts-list");
+  const recent = events.slice(0, MAX_ALERTS);
+
+  if (!recent.length) {
+    list.innerHTML = `<div class="empty-log">No recorded alerts in the retained logs.</div>`;
+    return;
+  }
 
   list.innerHTML = recent.map(item => {
-    if (item.kind === "error") {
-      return `
-        <div class="issue-row">
-          <span class="issue-ts">${fmtTime(item.ts)}</span>
-          <span class="issue-badge error">ERROR</span>
-          <span class="issue-msg">${item.msg}</span>
-        </div>`;
-    }
     const badgeClass = item.level === "critical" ? "crit" : "warn";
     const badgeLabel = item.level === "critical" ? "CRITICAL" : "WARN";
-    const sentNote   = item.sent ? "" : `<span class="issue-unsent">(suppressed — cooldown active)</span> `;
+    const delivery = item.source === "notification"
+      ? (item.sent ? "sent" : "not sent")
+      : "logged";
     return `
       <div class="issue-row">
         <span class="issue-ts">${fmtTime(item.ts)}</span>
         <span class="issue-badge ${badgeClass}">${badgeLabel}</span>
-        <span class="issue-msg">${sentNote}${item.msg}</span>
-        ${item.sub ? `<span class="issue-sub">${item.sub}</span>` : ""}
+        <span class="issue-badge info">${delivery}</span>
+        <span class="issue-msg">${escapeHTML(item.msg || "")}</span>
+        ${item.sub ? `<span class="issue-sub">${escapeHTML(item.sub)}</span>` : ""}
+      </div>`;
+  }).join("");
+}
+
+function renderErrors(errors) {
+  const panel = document.getElementById("error-panel");
+  const list  = document.getElementById("error-list");
+
+  if (!errors.length) {
+    panel.style.display = "none";
+    return;
+  }
+
+  const recent = errors
+    .map(e => ({ ts: e.ts, msg: e.message }))
+    .sort((a, b) => b.ts.localeCompare(a.ts))
+    .slice(0, 10);
+
+  list.innerHTML = recent.map(item => {
+    return `
+      <div class="issue-row">
+        <span class="issue-ts">${fmtTime(item.ts)}</span>
+        <span class="issue-badge error">ERROR</span>
+        <span class="issue-msg">${escapeHTML(item.msg || "")}</span>
       </div>`;
   }).join("");
 
   panel.style.display = "block";
+}
+
+function setupDesktopAlerts() {
+  const btn = document.getElementById("desktop-alerts");
+  if (!("Notification" in window)) return;
+
+  btn.hidden = false;
+  desktopAlertsEnabled =
+    localStorage.getItem(DESKTOP_ALERTS_KEY) === "1" &&
+    Notification.permission === "granted";
+  updateDesktopAlertsButton();
+
+  btn.addEventListener("click", async () => {
+    if (desktopAlertsEnabled) {
+      desktopAlertsEnabled = false;
+      localStorage.setItem(DESKTOP_ALERTS_KEY, "0");
+      updateDesktopAlertsButton();
+      return;
+    }
+
+    const permission = Notification.permission === "granted"
+      ? "granted"
+      : await Notification.requestPermission();
+
+    desktopAlertsEnabled = permission === "granted";
+    localStorage.setItem(DESKTOP_ALERTS_KEY, desktopAlertsEnabled ? "1" : "0");
+    updateDesktopAlertsButton();
+  });
+}
+
+function updateDesktopAlertsButton() {
+  const btn = document.getElementById("desktop-alerts");
+  btn.textContent = desktopAlertsEnabled ? "Desktop alerts on" : "Desktop alerts";
+  btn.classList.toggle("active", desktopAlertsEnabled);
+}
+
+function maybeSendDesktopNotifications(events) {
+  const sentEvents = events
+    .filter(e => e.source === "notification" && e.sent !== false)
+    .sort((a, b) => a.ts.localeCompare(b.ts));
+  const newest = sentEvents.at(-1)?.ts;
+  const lastSeen = localStorage.getItem(DESKTOP_ALERT_TS_KEY) || "";
+
+  if (!alertHistoryLoaded) {
+    if (!lastSeen && newest) localStorage.setItem(DESKTOP_ALERT_TS_KEY, newest);
+    alertHistoryLoaded = true;
+    return;
+  }
+
+  if (!desktopAlertsEnabled || Notification.permission !== "granted") return;
+
+  const fresh = sentEvents.filter(e => e.ts > lastSeen);
+  fresh.forEach(e => {
+    new Notification(`Pool Filter ${e.level === "critical" ? "Emergency" : "Alert"}`, {
+      body: e.msg,
+      tag: `pool-monitor-${e.ts}`,
+    });
+  });
+
+  if (newest && newest > lastSeen) localStorage.setItem(DESKTOP_ALERT_TS_KEY, newest);
 }
 
 // ── Auto-refresh (re-reads local CSV/errors only — no Pentair API calls) ─────
@@ -773,6 +904,16 @@ function thresholdLabel(label, rows, key) {
   return uniqueValues.length === 1 ? `${label} (${uniqueValues[0]}%)` : `${label} (per mode)`;
 }
 
+function escapeHTML(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+setupDesktopAlerts();
 init();
 </script>
 </body>

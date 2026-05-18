@@ -16,6 +16,8 @@ from .types import AlertLevel
 
 log = logging.getLogger(__name__)
 
+DASHBOARD_URL = "https://jamess-mac-mini.tail02a1a0.ts.net/pool-monitor/"
+
 
 class NtfyNotifier:
     def __init__(self, config: dict):
@@ -49,11 +51,15 @@ class NtfyNotifier:
             self._last_sent[level] = time.time()
         return sent
 
+    def send_info(self, title: str, message: str) -> bool:
+        """Send a low-priority informational notification (recalibration, trend warnings)."""
+        return self._post(title, f"{message}\n\n{DASHBOARD_URL}", "low", ["information_source"])
+
     def send_test(self) -> bool:
         """Send a test notification to confirm ntfy is working."""
         return self._post(
             title="Pool Monitor - Test",
-            message="Notification system is working. Pool monitor is active.",
+            message=f"Notification system is working. Pool monitor is active.\n\n{DASHBOARD_URL}",
             priority="default",
             tags=["white_check_mark"],
         )
@@ -79,13 +85,13 @@ class NtfyNotifier:
         if level == AlertLevel.CRITICAL:
             return (
                 "Pool Pump EMERGENCY",
-                f"\U0001f6a8 {reason}\n\n{status_summary}",
+                f"\U0001f6a8 {reason}\n\n{status_summary}\n\n{DASHBOARD_URL}",
                 self._priority_emergency,
                 ["rotating_light", "no_entry"],
             )
         return (
             "Pool Filter Alert",
-            f"\u26a0\ufe0f {reason}\n\n{status_summary}\n\nCheck and rinse filter.",
+            f"\u26a0\ufe0f {reason}\n\n{status_summary}\n\nCheck and rinse filter.\n\n{DASHBOARD_URL}",
             self._priority_alert,
             ["warning"],
         )
@@ -103,6 +109,7 @@ class NtfyNotifier:
                     "Title": ascii_safe(title),
                     "Priority": priority,
                     "Tags": ",".join(tags),
+                    "Actions": f"view, Dashboard, {DASHBOARD_URL}",
                     "Content-Type": "text/plain; charset=utf-8",
                 },
                 timeout=10,

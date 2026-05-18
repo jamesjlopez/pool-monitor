@@ -53,15 +53,20 @@ from .api_client import MockPentairClient, PentairCloudClient
 from .data_logger import DataLogger
 from .engine import Engine
 from .notifier import NtfyNotifier
+from .recalibrator import Recalibrator
+from .trend import TrendAnalyzer
 from .types import AlertLevel, EngineResult, PumpStatus
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_CONFIG    = PROJECT_ROOT / "config.yaml"
-STATE_FILE        = PROJECT_ROOT / "logs" / "state.json"
-ERRORS_FILE       = PROJECT_ROOT / "logs" / "errors.json"
-NOTIFICATIONS_FILE = PROJECT_ROOT / "logs" / "notifications.json"
-MAX_ERRORS         = 10
-MAX_NOTIFICATIONS  = 100
+STATE_FILE          = PROJECT_ROOT / "logs" / "state.json"
+ERRORS_FILE         = PROJECT_ROOT / "logs" / "errors.json"
+NOTIFICATIONS_FILE  = PROJECT_ROOT / "logs" / "notifications.json"
+RECAL_LOG_FILE      = PROJECT_ROOT / "logs" / "recalibrations.json"
+MAX_ERRORS          = 10
+MAX_NOTIFICATIONS   = 100
+
+TREND_CHECK_INTERVAL_HOURS = 12   # check trend at most twice per day
 
 
 def _record_error(message: str) -> None:
@@ -130,12 +135,13 @@ FAST_CONFIRM_INTERVAL = 120  # seconds between confirmation polls
 
 # Track consecutive CRITICAL readings for emergency shutoff gate
 _critical_streak = 0
-_shutoff_required = 1   # overridden by config at runtime
+_shutoff_required = 1       # overridden by config at runtime
+_last_trend_check: float = 0.0  # epoch seconds of last trend analysis
 
 
 def _load_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
     """Restore rolling window and cooldown timers from disk (survives cron restarts)."""
-    global _critical_streak
+    global _critical_streak, _last_trend_check
     try:
         state = json.loads(STATE_FILE.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
@@ -151,6 +157,7 @@ def _load_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
         }
     _critical_streak = state.get("critical_streak", 0)
     engine._zero_flow_streak = state.get("zero_flow_streak", 0)
+    _last_trend_check = state.get("last_trend_check", 0.0)
 
 
 def _save_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
@@ -160,6 +167,7 @@ def _save_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
         "notifier_last_sent": {str(k.value): v for k, v in notifier._last_sent.items()},
         "critical_streak": _critical_streak,
         "zero_flow_streak": engine._zero_flow_streak,
+        "last_trend_check": _last_trend_check,
     }
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
@@ -172,6 +180,7 @@ def run_once(
     config: dict,
     dry_run: bool = False,
     data_logger: Optional[DataLogger] = None,
+    recalibrator: Optional[Recalibrator] = None,
 ) -> Optional[EngineResult]:
     """
     Single poll cycle. Fetch pump status, evaluate it, send alert if needed.
@@ -196,6 +205,29 @@ def run_once(
     _log_result(result, status)
     if data_logger is not None:
         data_logger.log(status, result)
+
+    # Auto-recalibration: detect clean-filter events and update baseline
+    if recalibrator is not None and result.level == AlertLevel.NORMAL:
+        event = recalibrator.observe(status, config)
+        if event and not dry_run:
+            if event.baseline_updated:
+                engine.update_baseline(event.speed_mode, event.new_baseline)
+                notifier.send_info(
+                    "Pool Filter Cleaned — Baseline Updated",
+                    (
+                        f"Filter cleaning detected [{event.speed_mode} speed]. "
+                        f"Baseline auto-updated: {event.old_baseline:.4f} → {event.new_baseline:.4f} W/GPH. "
+                        f"config.yaml has been rewritten."
+                    ),
+                )
+            else:
+                notifier.send_info(
+                    "Pool Filter Cleaned — Baseline Confirmed",
+                    (
+                        f"Filter cleaning detected [{event.speed_mode} speed]. "
+                        f"Clean baseline confirmed at {event.old_baseline:.4f} W/GPH — no update needed."
+                    ),
+                )
 
     # Emergency shutoff streak tracking
     if result.level == AlertLevel.CRITICAL:
@@ -223,6 +255,26 @@ def run_once(
     return result
 
 
+def _check_trend(
+    trend_analyzer: "TrendAnalyzer",
+    notifier: "NtfyNotifier",
+    config: dict,
+    dry_run: bool,
+) -> None:
+    """Run trend analysis and notify if a threshold crossing is imminent."""
+    global _last_trend_check
+    now = time.time()
+    if now - _last_trend_check < TREND_CHECK_INTERVAL_HOURS * 3600:
+        return
+    _last_trend_check = now
+    warning = trend_analyzer.check(config)
+    if warning:
+        if dry_run:
+            log.info("[DRY RUN] Trend warning: %s", warning.message)
+        else:
+            notifier.send_info("Pool Filter Trend Warning", warning.message)
+
+
 def _sleep_until_next_slot(interval: int) -> None:
     """Sleep until the next wall-clock-aligned poll slot.
 
@@ -238,12 +290,15 @@ def _sleep_until_next_slot(interval: int) -> None:
     time.sleep(sleep_for)
 
 
-def main_loop(config: dict, dry_run: bool = False):
+def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_CONFIG):
     """Continuous polling loop. Runs until interrupted."""
     client = _build_client(config)
     engine = Engine(config)
     notifier = NtfyNotifier(config)
-    data_logger = None if dry_run else DataLogger(PROJECT_ROOT / "logs" / "metrics.csv")
+    recalibrator = Recalibrator(config_path, RECAL_LOG_FILE)
+    metrics_path = PROJECT_ROOT / "logs" / "metrics.csv"
+    trend_analyzer = TrendAnalyzer(metrics_path)
+    data_logger = None if dry_run else DataLogger(metrics_path)
     interval = config["pump"].get("poll_interval_seconds", 1800)
 
     log.info("Pool monitor started — polling every %ds, aligned to clock slots", interval)
@@ -259,7 +314,10 @@ def main_loop(config: dict, dry_run: bool = False):
                     engine.mark_pump_start()
                 prev_running = status.is_running
 
-            result = run_once(client, engine, notifier, config, dry_run=dry_run, data_logger=data_logger)
+            result = run_once(
+                client, engine, notifier, config,
+                dry_run=dry_run, data_logger=data_logger, recalibrator=recalibrator,
+            )
 
             # Fast confirmation: first elevated reading triggers 2 more polls at short
             # intervals to confirm before the next normal poll — catches transients.
@@ -272,10 +330,12 @@ def main_loop(config: dict, dry_run: bool = False):
                     time.sleep(FAST_CONFIRM_INTERVAL)
                     result = run_once(
                         client, engine, notifier, config,
-                        dry_run=dry_run, data_logger=data_logger,
+                        dry_run=dry_run, data_logger=data_logger, recalibrator=recalibrator,
                     )
                     if result is None or not result.pending_elevated:
                         break
+
+            _check_trend(trend_analyzer, notifier, config, dry_run)
 
         except KeyboardInterrupt:
             log.info("Shutting down — goodbye")
@@ -429,14 +489,20 @@ def main():
         sys.exit(0)
 
     if args.once:
+        metrics_path = PROJECT_ROOT / "logs" / "metrics.csv"
         client = _build_client(config)
         engine = Engine(config)
         notifier = NtfyNotifier(config)
+        recalibrator = Recalibrator(args.config, RECAL_LOG_FILE)
+        trend_analyzer = TrendAnalyzer(metrics_path)
         if not args.dry_run:
             _load_state(engine, notifier)
-        data_logger = None if args.dry_run else DataLogger(PROJECT_ROOT / "logs" / "metrics.csv")
+        data_logger = None if args.dry_run else DataLogger(metrics_path)
 
-        result = run_once(client, engine, notifier, config, dry_run=args.dry_run, data_logger=data_logger)
+        result = run_once(
+            client, engine, notifier, config,
+            dry_run=args.dry_run, data_logger=data_logger, recalibrator=recalibrator,
+        )
 
         # Fast confirmation: first elevated reading triggers 2 more polls at short
         # intervals before alerting — rules out priming spikes and transients.
@@ -449,16 +515,18 @@ def main():
                 time.sleep(FAST_CONFIRM_INTERVAL)
                 result = run_once(
                     client, engine, notifier, config,
-                    dry_run=args.dry_run, data_logger=data_logger,
+                    dry_run=args.dry_run, data_logger=data_logger, recalibrator=recalibrator,
                 )
                 if result is None or not result.pending_elevated:
                     break
+
+        _check_trend(trend_analyzer, notifier, config, args.dry_run)
 
         if not args.dry_run:
             _save_state(engine, notifier)
         sys.exit(0 if result is not None else 1)
 
-    main_loop(config, dry_run=args.dry_run)
+    main_loop(config, dry_run=args.dry_run, config_path=args.config)
 
 
 if __name__ == "__main__":

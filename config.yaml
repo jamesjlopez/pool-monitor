@@ -30,7 +30,7 @@ thresholds:
     alert_psi: 12
     emergency_psi: 18
     baseline_watts_per_gph: 0.1536    # clean-filter reading 2026-05-14 08:39 CDT: 539W / 3510 GPH
-    alert_ratio_pct: 65               # WARN if ratio >65% above clean baseline
+    alert_ratio_pct: 100              # WARN if ratio >100% above clean baseline
     emergency_ratio_pct: 300          # CRITICAL if ratio >300% above clean baseline
 
   high_speed:
@@ -38,7 +38,7 @@ thresholds:
     alert_psi: 20
     emergency_psi: 30
     baseline_watts_per_gph: 0.1929   # clean-filter reading 2026-05-14 08:42 CDT: 808W / 4188 GPH
-    alert_ratio_pct: 65
+    alert_ratio_pct: 100              # WARN if ratio >100% above clean baseline
     emergency_ratio_pct: 300
 
   alert_cooldown_minutes: 30          # don't repeat same alert level within this window
