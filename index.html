@@ -2,917 +2,1565 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0d">
 <title>Pool Filter Monitor</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <style>
-  :root {
-    --bg:       #0d1117;
-    --surface:  #161b22;
-    --border:   #30363d;
-    --text:     #e6edf3;
-    --muted:    #8b949e;
-    --green:    #3fb950;
-    --yellow:   #d29922;
-    --red:      #f85149;
-    --blue:     #58a6ff;
-    --purple:   #bc8cff;
-    --orange:   #f0883e;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    padding: 1rem;
-    max-width: 860px;
-    margin: 0 auto;
-  }
+/* ============================================================
+   Pool Filter Monitor — Apple-style dark widget dashboard
+   ============================================================ */
 
-  /* ── Header ── */
-  header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.75rem;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-  h1 { font-size: 1.05rem; font-weight: 600; white-space: nowrap; }
-  .desktop-alert-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    padding: 0.3rem 0.65rem;
-    border-radius: 6px;
-    font-size: 0.78rem;
-    cursor: pointer;
-  }
-  .desktop-alert-btn:hover,
-  .desktop-alert-btn.active {
-    background: var(--border);
-    color: var(--text);
-  }
+:root {
+  /* Surfaces */
+  --bg:          #0a0b0d;
+  --bg-2:        #0e0f12;
+  --widget:      #161719;
+  --widget-2:    #1c1e21;
+  --track:       #1f2225;
+  --sheen:       rgba(255,255,255,0.045);
+  --border:      rgba(255,255,255,0.08);
+  --border-2:    rgba(255,255,255,0.12);
 
-  /* ── Status strip ── */
-  .status-strip {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 0.55rem 0.9rem;
-    margin-bottom: 0.75rem;
-    flex-wrap: nowrap;
-    overflow: hidden;
-  }
-  .status-badge {
-    font-size: 0.95rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .status-meta {
-    font-size: 0.8rem;
-    color: var(--muted);
-    white-space: nowrap;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .status-divider {
-    width: 1px;
-    height: 1rem;
-    background: var(--border);
-    flex-shrink: 0;
-  }
-  .status-time {
-    font-size: 0.8rem;
-    color: var(--muted);
-    margin-left: auto;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
+  /* Text */
+  --text:        #f5f5f7;
+  --text-2:      rgba(235,235,245,0.62);
+  --text-3:      rgba(235,235,245,0.34);
+  --text-4:      rgba(235,235,245,0.20);
 
-  /* ── Range selector ── */
-  .range-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.35rem;
-    margin-bottom: 0.6rem;
-  }
-  .range-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    padding: 0.2rem 0.65rem;
-    border-radius: 6px;
-    font-size: 0.78rem;
-    cursor: pointer;
-    transition: background 0.12s, color 0.12s;
-  }
-  .range-btn:hover  { background: var(--border); color: var(--text); }
-  .range-btn.active { background: var(--border); color: var(--text); border-color: var(--muted); }
+  /* Accent + status */
+  --blue:        #0a84ff;
+  --cyan:        #64d2ff;
+  --green:       #30d158;
+  --amber:       #ff9f0a;
+  --red:         #ff453a;
+  --purple:      #bf5af2;
 
-  /* ── Chart panels ── */
-  .panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 0.9rem 1rem 0.75rem;
-    margin-bottom: 0.75rem;
-    min-width: 0;
-  }
-  .panel-title {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 0.65rem;
-  }
-  canvas { display: block; width: 100% !important; }
+  --green-soft:  rgba(48,209,88,0.16);
+  --amber-soft:  rgba(255,159,10,0.16);
+  --red-soft:    rgba(255,69,58,0.16);
 
-  /* ── Empty state ── */
-  #empty { text-align: center; color: var(--muted); padding: 2.5rem 0; font-size: 0.9rem; display: none; }
+  --radius-lg:   22px;
+  --radius-md:   16px;
+  --radius-sm:   10px;
 
-  /* ── Stale warning ── */
-  #stale-warning {
-    display: none;
-    font-size: 0.78rem;
-    color: var(--yellow);
-    background: rgba(210,153,34,0.1);
-    border: 1px solid rgba(210,153,34,0.3);
-    border-radius: 6px;
-    padding: 0.4rem 0.75rem;
-    margin-bottom: 0.75rem;
-  }
+  --shadow: 0 1px 0 rgba(255,255,255,0.04) inset,
+            0 12px 30px -12px rgba(0,0,0,0.7);
 
-  /* ── Alerts and issues logs ── */
-  #error-panel { display: none; }
-  .issue-row {
-    display: flex;
-    gap: 0.6rem;
-    font-size: 0.78rem;
-    padding: 0.4rem 0;
-    border-bottom: 1px solid var(--border);
-    align-items: baseline;
-    flex-wrap: wrap;
-  }
-  .issue-row:last-child { border-bottom: none; }
-  .issue-ts    { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
-  .issue-badge {
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .issue-badge.warn  { background: rgba(210,153,34,0.18); color: var(--yellow); }
-  .issue-badge.crit  { background: rgba(248,81,73,0.18);  color: var(--red);    }
-  .issue-badge.error { background: rgba(248,81,73,0.12);  color: var(--red);    }
-  .issue-badge.info  { background: rgba(88,166,255,0.14);  color: var(--blue);   }
-  .issue-msg   { color: var(--text); min-width: 0; }
-  .issue-sub   { color: var(--muted); font-size: 0.72rem; width: 100%; padding-left: 0; margin-top: 0.1rem; }
-  .issue-unsent { color: var(--muted); font-style: italic; }
-  .empty-log { color: var(--muted); font-size: 0.78rem; }
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+          "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Menlo", "Monaco", monospace;
 
-  /* ── Status colours ── */
-  .ok   { color: var(--green);  }
-  .warn { color: var(--yellow); }
-  .crit { color: var(--red);    }
+  --maxw: 1120px;
+}
 
-  /* ── Responsive ── */
-  @media (max-width: 480px) {
-    body { padding: 0.65rem; }
-    #ratio-chart { height: 180px !important; }
-    #pf-chart    { height: 260px !important; }
-  }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 700px at 18% -8%, #14171b 0%, rgba(20,23,27,0) 60%),
+    radial-gradient(1000px 800px at 110% 0%, #121417 0%, rgba(18,20,23,0) 55%),
+    var(--bg);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.011em;
+  line-height: 1.4;
+}
+
+.app {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 22px clamp(14px, 3vw, 28px) 64px;
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.app-icon {
+  width: 46px; height: 46px;
+  border-radius: 12px;
+  flex: none;
+  background: radial-gradient(120% 120% at 30% 20%, #2aa9ff 0%, #0a84ff 45%, #0860c4 100%);
+  display: grid; place-items: center;
+  box-shadow: 0 6px 16px -6px rgba(10,132,255,0.7),
+              0 0 0 0.5px rgba(255,255,255,0.18) inset;
+}
+.app-icon svg { width: 26px; height: 26px; display: block; }
+.brand-text { min-width: 0; }
+.brand-name {
+  font-size: 19px; font-weight: 600; letter-spacing: -0.02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.brand-sub { font-size: 12.5px; color: var(--text-3); margin-top: 1px; }
+.topbar-spacer { flex: 1; }
+
+.ghost-btn {
+  font-family: var(--font);
+  font-size: 13.5px; font-weight: 500;
+  color: var(--text-2);
+  background: var(--widget);
+  border: 1px solid var(--border);
+  border-radius: 980px;
+  padding: 8px 15px;
+  display: inline-flex; align-items: center; gap: 7px;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+  white-space: nowrap;
+}
+.ghost-btn:hover { background: var(--widget-2); color: var(--text); border-color: var(--border-2); }
+.ghost-btn.active { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 50%, transparent); background: rgba(10,132,255,0.12); }
+.ghost-btn svg { width: 15px; height: 15px; }
+
+/* Hero status */
+.hero {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, var(--sheen), rgba(255,255,255,0) 42%),
+    var(--widget);
+  box-shadow: var(--shadow);
+  padding: 22px clamp(18px, 2.5vw, 26px);
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(420px 200px at 88% -40%, var(--status-glow, transparent), transparent 70%);
+  pointer-events: none;
+}
+.hero-row { display: flex; align-items: center; gap: 20px; position: relative; }
+
+.status-dot {
+  width: 52px; height: 52px; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 34% 30%, color-mix(in srgb, var(--status, var(--green)) 70%, white) 0%, var(--status, var(--green)) 55%, color-mix(in srgb, var(--status, var(--green)) 70%, black) 100%);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--status, var(--green)) 16%, transparent),
+              0 4px 14px -2px color-mix(in srgb, var(--status, var(--green)) 60%, transparent);
+  position: relative;
+}
+.status-dot::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  animation: pulse 2.6s ease-out infinite;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--status, var(--green)) 55%, transparent); opacity: 1; }
+  70%  { box-shadow: 0 0 0 16px color-mix(in srgb, var(--status, var(--green)) 0%, transparent); opacity: 0; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .status-dot::after { animation: none; } }
+
+.hero-main { flex: 1; min-width: 0; }
+.hero-eyebrow {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--status, var(--green));
+  display: flex; align-items: center; gap: 8px;
+}
+.hero-eyebrow .speed-chip {
+  color: var(--text-2); background: var(--widget-2);
+  border: 1px solid var(--border);
+  padding: 2px 9px; border-radius: 980px; letter-spacing: 0; text-transform: none;
+  font-weight: 500; font-size: 11.5px;
+}
+.hero-headline {
+  font-size: clamp(24px, 4.4vw, 34px); font-weight: 600; letter-spacing: -0.025em;
+  margin: 6px 0 4px; line-height: 1.08;
+}
+.hero-detail { font-size: 14.5px; color: var(--text-2); }
+
+.hero-forecast {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 13px;
+  font-size: 13.5px; color: var(--text-2);
+  background: var(--widget-2); border: 1px solid var(--border);
+  padding: 7px 13px 7px 11px; border-radius: 980px;
+}
+.hero-forecast svg { width: 15px; height: 15px; color: var(--text-3); flex: none; }
+.hero-forecast b { color: var(--text); font-weight: 600; }
+.hero-forecast .hf-sub { color: var(--text-3); }
+
+.hero-metric { text-align: right; flex: none; }
+.hero-metric .val {
+  font-size: clamp(30px, 5vw, 40px); font-weight: 600; letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.hero-metric .lbl { font-size: 11.5px; color: var(--text-3); margin-top: 6px; letter-spacing: 0.01em; }
+.hero-metric .updated { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.hero-metric .updated.stale { color: var(--amber); }
+
+@media (max-width: 560px) {
+  .hero-row { flex-wrap: wrap; }
+  .status-dot { width: 44px; height: 44px; }
+  .hero-metric { text-align: left; width: 100%; padding-top: 14px; margin-top: 4px;
+                 border-top: 1px solid var(--border); display: flex; align-items: baseline; gap: 10px; }
+  .hero-metric .lbl { margin-top: 0; }
+  .hero-metric .updated { margin-left: auto; }
+}
+
+/* Range control */
+.controls-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 16px;
+}
+.controls-row .hint { font-size: 12.5px; color: var(--text-3); }
+
+.segmented {
+  display: inline-flex; padding: 3px; gap: 2px;
+  background: var(--track);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.segmented button {
+  font-family: var(--font); font-size: 13.5px; font-weight: 500;
+  color: var(--text-2); background: transparent; border: none;
+  padding: 6px 16px; border-radius: 9px; cursor: pointer;
+  transition: color .15s ease;
+}
+.segmented button[aria-selected="true"] {
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+  box-shadow: 0 1px 0 rgba(255,255,255,0.10) inset, 0 4px 10px -4px rgba(0,0,0,0.6);
+}
+
+/* Grid + widgets */
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.span-2 { grid-column: 1 / -1; }
+@media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+
+.widget {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, var(--sheen), rgba(255,255,255,0) 38%),
+    var(--widget);
+  box-shadow: var(--shadow);
+  padding: 18px clamp(16px, 2vw, 22px) 20px;
+  min-width: 0;
+}
+
+.widget-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 14px;
+}
+.widget-titles { min-width: 0; }
+.widget-title {
+  font-size: 16px; font-weight: 600; letter-spacing: -0.01em;
+  display: flex; align-items: center; gap: 7px;
+}
+.widget-eyebrow { font-size: 11.5px; color: var(--text-3); margin-top: 3px; }
+
+.info-btn {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--widget-2);
+  color: var(--text-3); cursor: pointer;
+  display: grid; place-items: center; padding: 0;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.info-btn:hover { color: var(--text); border-color: var(--border-2); }
+.info-btn svg { width: 13px; height: 13px; }
+.info-btn[aria-expanded="true"] {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 50%, transparent);
+  background: rgba(10,132,255,0.12);
+}
+
+.tech-note {
+  max-height: 0; overflow: hidden; opacity: 0;
+  transition: max-height .28s ease, opacity .2s ease, margin .28s ease;
+  margin-top: 0;
+}
+.tech-note.open { max-height: 220px; opacity: 1; margin-top: -6px; margin-bottom: 14px; }
+.tech-note-inner {
+  font-family: var(--mono); font-size: 12px; line-height: 1.55;
+  color: var(--text-2);
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 11px 13px;
+}
+.tech-note-inner b { color: var(--text); font-weight: 600; }
+
+/* Legend */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.legend .item { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-2); }
+.legend .sw { width: 18px; height: 4px; border-radius: 3px; flex: none; }
+.legend .sw.dash { background-image: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px); height: 3px; }
+.legend .sw.dot { width: 9px; height: 9px; border-radius: 50%; }
+
+.chart-wrap { position: relative; width: 100%; }
+.chart-wrap canvas { touch-action: pan-y; }
+.chart-wrap.tall { height: 280px; }
+.chart-wrap.med  { height: 220px; }
+@media (max-width: 560px) { .chart-wrap.tall, .chart-wrap.med { height: 220px; } }
+
+/* Stat chips */
+.statline { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.stat {
+  flex: 1 1 0; min-width: 120px;
+  background: var(--widget-2); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 11px 13px;
+}
+.stat .k { font-size: 11.5px; color: var(--text-3); }
+.stat .v { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: 12px; color: var(--text-3); font-weight: 500; margin-left: 2px; letter-spacing: 0; }
+
+/* Lists */
+.list { display: flex; flex-direction: column; }
+.row {
+  padding: 14px 0; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.list .row:first-child { border-top: none; padding-top: 4px; }
+
+.row-top { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.row-time { font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+.pill {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 2.5px 8px; border-radius: 980px; line-height: 1.3;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.pill.warn  { color: var(--amber); background: var(--amber-soft); }
+.pill.emerg { color: var(--red);   background: var(--red-soft); }
+.pill.ok    { color: var(--green); background: var(--green-soft); }
+.pill.muted { color: var(--text-2); background: var(--widget-2); font-weight: 500; }
+
+.row-msg { font-size: 14.5px; color: var(--text); line-height: 1.45; }
+
+.row-tech {
+  font-family: var(--mono); font-size: 12px; color: var(--text-2);
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 9px 11px;
+  display: none;
+}
+.row.expanded .row-tech { display: block; }
+
+.disclosure {
+  align-self: flex-start;
+  font-family: var(--font); font-size: 12.5px; font-weight: 500;
+  color: var(--text-3); background: none; border: none; padding: 2px 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.disclosure:hover { color: var(--text-2); }
+.disclosure svg { width: 11px; height: 11px; transition: transform .2s ease; }
+.row.expanded .disclosure svg { transform: rotate(90deg); }
+
+.empty { font-size: 13.5px; color: var(--text-3); padding: 10px 0 4px; }
+
+.section-foot { margin-top: 14px; padding-top: 4px; }
+.linklike {
+  font-size: 13px; font-weight: 500; color: var(--blue);
+  background: none; border: none; cursor: pointer; padding: 0;
+}
+.linklike:hover { text-decoration: underline; }
+
+/* Footer */
+.foot { margin-top: 26px; text-align: center; color: var(--text-4); font-size: 12px; }
+.foot a { color: var(--text-3); text-decoration: none; }
+.foot a:hover { color: var(--text-2); }
+
+/* No-data overlay */
+.no-data-msg {
+  text-align: center; padding: 2.5rem 0;
+  font-size: 14px; color: var(--text-3);
+}
+
+/* Cleaning log button + form */
+.widget-actions {
+  display: flex; justify-content: flex-end;
+  margin-top: 14px;
+}
+.log-cleaning-btn {
+  font-family: var(--font); font-size: 12.5px; font-weight: 500;
+  color: var(--cyan);
+  background: rgba(100,210,255,0.08);
+  border: 1px solid rgba(100,210,255,0.22);
+  border-radius: 980px; padding: 6px 14px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: background .15s ease, border-color .15s ease;
+}
+.log-cleaning-btn:hover { background: rgba(100,210,255,0.14); border-color: rgba(100,210,255,0.38); }
+.log-cleaning-btn svg { width: 13px; height: 13px; }
+
+.cleaning-form {
+  margin-top: 12px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 14px 16px;
+  animation: fadeIn .18s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+.cleaning-form[hidden] { display: none; }
+.cleaning-form-inner { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.cleaning-label {
+  font-size: 12.5px; color: var(--text-3);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.cleaning-input {
+  font-family: var(--mono); font-size: 13px; color: var(--text);
+  background: var(--widget-2); border: 1px solid var(--border-2);
+  border-radius: 8px; padding: 7px 10px; outline: none;
+  color-scheme: dark; min-width: 200px;
+}
+.cleaning-input:focus { border-color: var(--blue); }
+.cleaning-save {
+  font-family: var(--font); font-size: 13px; font-weight: 600;
+  color: #fff; background: var(--blue); border: none;
+  border-radius: 8px; padding: 8px 16px; cursor: pointer;
+  transition: opacity .15s ease;
+}
+.cleaning-save:hover { opacity: 0.85; }
+.cleaning-cancel {
+  font-family: var(--font); font-size: 13px; font-weight: 500;
+  color: var(--text-3); background: none; border: none;
+  cursor: pointer; padding: 8px 4px;
+}
+.cleaning-cancel:hover { color: var(--text-2); }
 </style>
 </head>
 <body>
+<div class="app">
 
-<header>
-  <h1><img src="app-icon.png" alt="" style="height:60px;vertical-align:middle;margin-right:0.5rem;">Pool Filter Monitor</h1>
-  <button class="desktop-alert-btn" id="desktop-alerts" type="button" hidden>Desktop alerts</button>
-</header>
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="app-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 2.5c3.6 4.2 6 7.4 6 10.2a6 6 0 0 1-12 0c0-2.8 2.4-6 6-10.2Z" fill="#fff" fill-opacity="0.95"/>
+          <path d="M8.4 13.4c.9.7 1.6.7 2.5 0s1.6-.7 2.5 0" stroke="#0a84ff" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">Pool Filter Monitor</div>
+        <div class="brand-sub">Whisper-quiet watch on your pump</div>
+      </div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <button class="ghost-btn" id="alerts-btn" type="button" title="Toggle desktop alerts">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 3a5 5 0 0 0-5 5v3.5L5.5 15h13L17 11.5V8a5 5 0 0 0-5-5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 18a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span id="alerts-btn-label">Alerts</span>
+    </button>
+  </header>
 
-<div class="status-strip">
-  <span class="status-badge ok" id="c-status">—</span>
-  <div class="status-divider"></div>
-  <span class="status-meta" id="c-mode">—</span>
-  <span class="status-time" id="last-updated">Loading…</span>
+  <!-- Hero status -->
+  <section class="hero" id="hero">
+    <div class="hero-row">
+      <div class="status-dot" aria-hidden="true"></div>
+      <div class="hero-main">
+        <div class="hero-eyebrow">
+          <span id="status-word">Loading</span>
+          <span class="speed-chip" id="speed-chip">—</span>
+        </div>
+        <div class="hero-headline" id="status-headline">Checking pump status…</div>
+        <div class="hero-detail" id="status-detail">Fetching the latest readings from the local data file.</div>
+        <div class="hero-forecast" id="hero-forecast">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span class="hf-text">Estimating next cleaning…</span>
+        </div>
+      </div>
+      <div class="hero-metric">
+        <div class="val" id="hero-restriction">—</div>
+        <div class="lbl">restriction now</div>
+        <div class="updated" id="hero-updated">loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Range control -->
+  <div class="controls-row">
+    <span class="hint">Showing the last 7 days</span>
+    <div class="segmented" role="tablist" aria-label="Time range" id="range">
+      <button role="tab" aria-selected="true"  data-range="7">7 days</button>
+      <button role="tab" aria-selected="false" data-range="14">14 days</button>
+      <button role="tab" aria-selected="false" data-range="30">30 days</button>
+    </div>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid">
+
+    <!-- Filter restriction (primary) -->
+    <section class="widget span-2">
+      <div class="widget-head">
+        <div class="widget-titles">
+          <div class="widget-title">Filter restriction
+            <button class="info-btn" type="button" aria-expanded="false" data-info="info-restriction" aria-label="What is this?">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <div class="widget-eyebrow">How clogged the filter is, vs. a fresh-clean baseline</div>
+        </div>
+        <div class="legend" id="legend-restriction"></div>
+      </div>
+      <div class="tech-note" id="info-restriction">
+        <div class="tech-note-inner">
+          <b>Hydraulic restriction proxy</b> — percentage above the current clean-filter baseline.
+          Derived from the W/GPH efficiency ratio (watts per gallon-per-hour). Higher = more
+          resistance = dirtier filter. <b>Alert</b> fires at +100%, <b>Emergency</b> at +300%.
+        </div>
+      </div>
+      <div class="chart-wrap tall"><canvas id="chart-restriction"></canvas></div>
+      <div class="statline">
+        <div class="stat"><div class="k">Now</div><div class="v" id="st-now">—</div></div>
+        <div class="stat"><div class="k">Peak (range)</div><div class="v" id="st-peak">—</div></div>
+        <div class="stat"><div class="k">Clean baseline</div><div class="v" id="st-baseline">—</div></div>
+        <div class="stat"><div class="k">Trend</div><div class="v" id="st-trend">—</div></div>
+      </div>
+      <div class="widget-actions">
+        <button class="log-cleaning-btn" id="log-cleaning-open" type="button">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Log a cleaning
+        </button>
+      </div>
+      <div class="cleaning-form" id="cleaning-form" hidden>
+        <div class="cleaning-form-inner">
+          <label class="cleaning-label">
+            Date &amp; time of cleaning
+            <input type="datetime-local" id="cleaning-dt" class="cleaning-input">
+          </label>
+          <button class="cleaning-save" id="cleaning-save" type="button">Save</button>
+          <button class="cleaning-cancel" id="cleaning-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Energy cost -->
+    <section class="widget">
+      <div class="widget-head">
+        <div class="widget-titles">
+          <div class="widget-title">Daily running cost
+            <button class="info-btn" type="button" aria-expanded="false" data-info="info-energy" aria-label="What is this?">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <div class="widget-eyebrow">Extra daily cost from filter clog — $0 means running clean</div>
+        </div>
+        <div class="legend" id="legend-energy"></div>
+      </div>
+      <div class="tech-note" id="info-energy">
+        <div class="tech-note-inner">
+          <b>Extra daily cost</b> = watts above the per-speed clean baseline × hours × $0.12/kWh.
+          Only accumulates on readings that crossed the alert threshold — money a timely filter clean would have saved.
+          Today is excluded since the day is incomplete. Update <code>KWH_RATE</code> in this file to match your rate.
+        </div>
+      </div>
+      <div class="chart-wrap med"><canvas id="chart-energy"></canvas></div>
+      <div class="statline">
+        <div class="stat"><div class="k">Avg extra / day</div><div class="v" id="st-avgcost">—</div></div>
+        <div class="stat"><div class="k">Total wasted</div><div class="v" id="st-waste">—</div></div>
+      </div>
+    </section>
+
+    <!-- Power & flow -->
+    <section class="widget">
+      <div class="widget-head">
+        <div class="widget-titles">
+          <div class="widget-title">Extra pump work
+            <button class="info-btn" type="button" aria-expanded="false" data-info="info-power" aria-label="What is this?">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <div class="widget-eyebrow">Watts above the clean-filter baseline — 0 means no extra work</div>
+        </div>
+        <div class="legend" id="legend-power"></div>
+      </div>
+      <div class="tech-note" id="info-power">
+        <div class="tech-note-inner">
+          <b>Extra watts</b> = actual power draw minus expected for a clean filter at that flow rate.
+          Expected is the 10th-percentile W/GPH ratio per 200-GPH flow bucket across all history,
+          so it adapts to each speed program independently. The line sits near 0 when clean, rises
+          as the filter clogs — unaffected by speed-program switches that used to dominate the chart.
+        </div>
+      </div>
+      <div class="chart-wrap med"><canvas id="chart-power"></canvas></div>
+      <div class="statline">
+        <div class="stat"><div class="k">Extra now</div><div class="v" id="st-extra-watts">—</div></div>
+        <div class="stat"><div class="k">Actual now</div><div class="v" id="st-watts">—</div></div>
+        <div class="stat"><div class="k">Flow now</div><div class="v" id="st-gpm">—</div></div>
+      </div>
+    </section>
+
+    <!-- Recent alerts -->
+    <section class="widget">
+      <div class="widget-head">
+        <div class="widget-titles">
+          <div class="widget-title">Recent alerts</div>
+          <div class="widget-eyebrow">Notifications pushed to your phone</div>
+        </div>
+      </div>
+      <div class="list" id="alerts-list"><div class="empty">Loading…</div></div>
+      <div class="section-foot"><button class="linklike" type="button" id="view-all-alerts">View all alerts</button></div>
+    </section>
+
+    <!-- Recent issues -->
+    <section class="widget">
+      <div class="widget-head">
+        <div class="widget-titles">
+          <div class="widget-title">Recent issues</div>
+          <div class="widget-eyebrow">Events the monitor flagged but didn't push</div>
+        </div>
+      </div>
+      <div class="list" id="issues-list"><div class="empty">Loading…</div></div>
+      <div class="section-foot"><button class="linklike" type="button" id="view-full-log">View full log</button></div>
+    </section>
+
+  </div>
+
+  <div class="foot">
+    Updates every 5&nbsp;min &middot; Local-only, no cloud &middot; <a href="https://github.com" id="github-link">View on GitHub</a>
+  </div>
+
 </div>
 
-<div id="stale-warning">⚠️ Last reading is more than 45 minutes old — monitor may not be running</div>
-
-<p id="empty">No data yet — the monitor will populate this dashboard on its first poll.</p>
-
-<div class="range-row">
-  <button class="range-btn" data-days="7">7d</button>
-  <button class="range-btn active" data-days="14">14d</button>
-  <button class="range-btn" data-days="30">30d</button>
-</div>
-
-<div class="panel">
-  <div class="panel-title">Hydraulic Restriction Proxy — % above current clean baseline</div>
-  <canvas id="ratio-chart" height="220"></canvas>
-</div>
-
-<div class="panel">
-  <div class="panel-title">Estimated Daily Energy Cost</div>
-  <canvas id="cost-chart" height="100"></canvas>
-</div>
-
-<div class="panel">
-  <div class="panel-title">Power &amp; Flow (GPM)</div>
-  <canvas id="pf-chart" height="180"></canvas>
-</div>
-
-<div class="panel" id="alerts-panel">
-  <div class="panel-title">Recent Alerts</div>
-  <div id="alerts-list"><div class="empty-log">Loading alerts...</div></div>
-</div>
-
-<div class="panel" id="error-panel">
-  <div class="panel-title">Recent Issues</div>
-  <div id="error-list"></div>
-</div>
-
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script>
-// ── User-configurable constants ─────────────────────────────────────────────
-const KWH_RATE  = 0.12;   // $/kWh — update to match your electricity rate
-const POLL_HRS  = 0.5;    // each reading represents 30 minutes
+/* ============================================================
+   Pool Filter Monitor Dashboard
+   Real data layer: logs/metrics.csv + logs/notifications.json
+                  + logs/errors.json + config.yaml
+   ============================================================ */
 
-// ── Chart colours ───────────────────────────────────────────────────────────
-const LEVEL_COLOR = { normal: "#3fb950", warn: "#d29922", critical: "#f85149" };
-const GRID  = "rgba(48,54,61,0.8)";
-const TICK  = "#8b949e";
-const CONFIG        = "config.yaml";
-const CSV           = "logs/metrics.csv";
-const ERRORS        = "logs/errors.json";
-const NOTIFICATIONS = "logs/notifications.json";
-const STALE_MINUTES = 45;    // warn if last reading older than this
-const REFRESH_MS    = 5 * 60 * 1000;  // auto-refresh every 5 minutes (local files only, no API calls)
-const MAX_ALERTS    = 10;
-const DESKTOP_ALERTS_KEY = "poolMonitorDesktopAlerts";
-const DESKTOP_ALERT_TS_KEY = "poolMonitorLastDesktopAlertTs";
+// ── User-configurable ────────────────────────────────────────
+const KWH_RATE   = 0.12;   // $/kWh — update to match your rate
+const POLL_HRS   = 0.5;    // each reading = 30 minutes of pump time
+const STALE_MIN  = 45;     // warn if last reading is older than this
+const REFRESH_MS = 5 * 60 * 1000;
+const MAX_ALERTS = 10;
 
-// ── State ───────────────────────────────────────────────────────────────────
-let allRows    = [];
-let rangeDays  = 14;
-let ratioChart = null;
-let costChart  = null;
-let pfChart    = null;
-let dashboardConfig = defaultDashboardConfig();
-let desktopAlertsEnabled = false;
-let alertHistoryLoaded = false;
+const FILES = {
+  csv:    'logs/metrics.csv',
+  notif:  'logs/notifications.json',
+  err:    'logs/errors.json',
+  cfg:    'config.yaml',
+  recal:  'logs/recalibrations.json',
+};
 
-// ── Boot ────────────────────────────────────────────────────────────────────
-async function init() {
-  let text;
-  try {
-    const t = Date.now();
-    dashboardConfig = await loadDashboardConfig(t);
-    const csvResp = await fetch(CSV + "?t=" + t);
-    if (!csvResp.ok) throw new Error(csvResp.status);
-    text = await csvResp.text();
-  } catch {
-    document.getElementById("last-updated").textContent = "Could not load metrics.csv";
-    document.getElementById("empty").style.display = "block";
-    return;
+// ── Design tokens (mirrored from CSS for Chart.js) ───────────
+const C = {
+  blue:   '#0a84ff', cyan:  '#64d2ff', green: '#30d158',
+  amber:  '#ff9f0a', red:   '#ff453a', purple:'#bf5af2',
+  text2:  'rgba(235,235,245,0.62)', text3: 'rgba(235,235,245,0.34)',
+  grid:   'rgba(255,255,255,0.06)', border:'rgba(255,255,255,0.10)',
+};
+const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif';
+
+// ── State ────────────────────────────────────────────────────
+let allRows           = [];
+let dashCfg           = defaultDashboardConfig();
+let currentDays       = 7;
+let charts            = {};
+let allCleanings      = [];   // { ts: Date, type: 'auto'|'manual', ... }
+let lastRecalibrations = [];  // raw recalibrations.json array
+let desktopOn         = false;
+let alertsLoaded      = false;
+const DESKTOP_KEY     = 'poolMonitorDesktopAlerts';
+const DESKTOP_TS_KEY  = 'poolMonitorLastAlertTs';
+const CLEANINGS_KEY   = 'poolMonitorCleanings';
+
+// ── Formatting ───────────────────────────────────────────────
+const fmtDay  = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+const fmtTime = d => {
+  if (typeof d === 'string') d = new Date(d);
+  if (isNaN(d)) return String(d);
+  return d.toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+};
+
+function relAge(ts) {
+  const mins = (Date.now() - new Date(ts)) / 60000;
+  if (mins < 1)   return 'just now';
+  if (mins < 60)  return `${Math.round(mins)} min ago`;
+  return `${Math.round(mins / 60)}h ago`;
+}
+
+function escapeHTML(v) {
+  return String(v)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Gradient helper ──────────────────────────────────────────
+function gradient(ctx, area, hex, a1, a2) {
+  if (!area) return 'transparent';
+  const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+  g.addColorStop(0, hexA(hex, a1));
+  g.addColorStop(1, hexA(hex, a2));
+  return g;
+}
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;
+}
+
+// ── Forecast ─────────────────────────────────────────────────
+function predictClean(d) {
+  const xs = d.labels.map(l => (l - d.labels[0]) / 86400000);
+  const ys = d.restriction; const n = xs.length;
+  if (!n) return { none: true };
+  const mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
+  let num=0, den=0;
+  for (let i=0;i<n;i++){ num+=(xs[i]-mx)*(ys[i]-my); den+=(xs[i]-mx)**2; }
+  const slope = den ? num/den : 0;
+  const now = ys[n-1];
+  if (now >= 100) return { overdue: true };
+  if (slope < 1.2) return { none: true };
+  const daysTo = (100 - now) / slope;
+  if (daysTo > 45) return { none: true };
+  return { target: new Date(+d.now + daysTo*86400000) };
+}
+
+function whenText(target, now) {
+  const days = Math.round((target - now) / 86400000);
+  if (days <= 0) return ['now', ''];
+  if (days === 1) return ['tomorrow', target.toLocaleDateString('en-US',{weekday:'long'})];
+  if (days <= 6)  return [`in ${days} days`, 'on '+target.toLocaleDateString('en-US',{weekday:'long'})];
+  if (days <= 27) return [`in ${days} days`, target.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})];
+  return [`in about ${Math.round(days/7)} weeks`, target.toLocaleDateString('en-US',{month:'short',day:'numeric'})];
+}
+
+// ── Chart defaults ───────────────────────────────────────────
+Chart.defaults.font.family = FONT;
+Chart.defaults.font.size   = 12;
+Chart.defaults.color       = C.text3;
+
+const TOOLTIP_BASE = {
+  backgroundColor: 'rgba(28,30,33,0.96)',
+  borderColor: C.border, borderWidth: 1,
+  titleColor: '#f5f5f7', bodyColor: C.text2,
+  padding: 11, cornerRadius: 12, displayColors: true,
+  boxPadding: 5, usePointStyle: true,
+  titleFont: { weight: '600', size: 12.5 }, bodyFont: { size: 12.5 },
+};
+const BASE_X = {
+  grid: { display: false }, border: { display: false },
+  ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: C.text3, padding: 8 },
+};
+function yAxis(extra={}) {
+  return Object.assign({
+    grid:   { color: C.grid, drawTicks: false },
+    border: { display: false },
+    ticks:  { color: C.text3, padding: 10, maxTicksLimit: 6 },
+  }, extra);
+}
+
+// ── Crosshair plugin ─────────────────────────────────────────
+const crosshair = {
+  id: 'crosshair',
+  afterDraw(chart) {
+    const act = chart.tooltip?.getActiveElements?.() || [];
+    if (!act.length) return;
+    const x = act[0].element.x;
+    const { ctx, chartArea: a } = chart;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x, a.top); ctx.lineTo(x, a.bottom);
+    ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.stroke();
+    ctx.restore();
   }
+};
 
-  const lines = text.trim().split("\n");
-  if (lines.length < 2) { document.getElementById("empty").style.display = "block"; return; }
-
-  const hdrs = lines[0].split(",").map(h => h.trim());
-  allRows = lines.slice(1).map(line => {
-    const v = line.split(",");
-    const o = {};
-    hdrs.forEach((h, i) => o[h] = (v[i] || "").trim());
-    return {
-      ts:       o.timestamp,
-      watts:    +o.power_watts,
-      gph:      +o.flow_gph,
-      gpm:      o.flow_gph ? +o.flow_gph / 60 : null,
-      ratio:    o.watts_per_gph           ? +o.watts_per_gph           : null,
-      rowBaseline: o.baseline_watts_per_gph ? +o.baseline_watts_per_gph : null,
-      mode:     o.speed_mode,
-      level:    o.alert_level,
-      rpm:      +o.rpm,
-    };
-  }).filter(r => r.ratio !== null);
-
-  annotateRows(allRows);
-
-  if (!allRows.length) { document.getElementById("empty").style.display = "block"; return; }
-  render();
-  checkStale();
-  loadIssues();
+// ── Cleaning markers plugin ──────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w,y, x+w,y+r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h, x+w-r,y+h);
+  ctx.lineTo(x+r, y+h);
+  ctx.quadraticCurveTo(x,y+h, x,y+h-r);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x,y, x+r,y);
+  ctx.closePath();
 }
 
-// ── Stale data warning ────────────────────────────────────────────────────────
-function checkStale() {
-  if (!allRows.length) return;
-  const latest = new Date(allRows[allRows.length - 1].ts);
-  const ageMin = (Date.now() - latest) / 60000;
-  document.getElementById("stale-warning").style.display =
-    ageMin > STALE_MINUTES ? "block" : "none";
+function cleaningMarkersPlugin(cleanings) {
+  return {
+    id: 'cleaningMarkers',
+    afterDraw(chart) {
+      if (!cleanings || !cleanings.length) return;
+      const { ctx, chartArea: a, scales: { x }, data: { labels } } = chart;
+      if (!labels || !labels.length) return;
+
+      const xMin = +labels[0];
+      const xMax = +labels[labels.length - 1];
+
+      cleanings.forEach(c => {
+        const ts = +c.ts;
+        if (ts < xMin - 3600000 || ts > xMax + 3600000) return;
+
+        // Find the nearest label index for x-position
+        let closest = 0, minDiff = Infinity;
+        labels.forEach((l, i) => {
+          const d = Math.abs(+l - ts);
+          if (d < minDiff) { minDiff = d; closest = i; }
+        });
+        const xPx  = x.getPixelForValue(closest);
+        const color = c.type === 'manual' ? C.cyan : C.green;
+
+        ctx.save();
+
+        // Vertical line
+        ctx.strokeStyle = hexA(color, 0.55);
+        ctx.lineWidth = 1.5;
+        if (c.type === 'manual') ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(xPx, a.top + 20);
+        ctx.lineTo(xPx, a.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Badge
+        const badge = c.type === 'manual' ? 'Cleaned ✓' : 'Cleaned';
+        ctx.font = `600 10px ${FONT}`;
+        const tw = ctx.measureText(badge).width;
+        const bw = tw + 10, bh = 16;
+        const bx = Math.min(Math.max(xPx - bw/2, a.left), a.right - bw);
+        const by = a.top + 2;
+
+        roundRect(ctx, bx, by, bw, bh, 4);
+        ctx.fillStyle = hexA(color, 0.14);
+        ctx.fill();
+        ctx.strokeStyle = hexA(color, 0.35);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = hexA(color, 0.95);
+        ctx.textAlign = 'center';
+        ctx.fillText(badge, bx + bw/2, by + 11);
+        ctx.restore();
+      });
+    }
+  };
 }
 
-// ── Alert and issue logs ──────────────────────────────────────────────────────
-async function loadIssues() {
-  const t = Date.now();
-  const [errResp, notifResp] = await Promise.allSettled([
-    fetch(ERRORS        + "?t=" + t),
-    fetch(NOTIFICATIONS + "?t=" + t),
+// ── Cleaning data helpers ────────────────────────────────────
+function loadManualCleanings() {
+  try { return JSON.parse(localStorage.getItem(CLEANINGS_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveManualCleaning(isoStr) {
+  const list = loadManualCleanings();
+  list.push({ ts: isoStr });
+  list.sort((a, b) => a.ts.localeCompare(b.ts));
+  localStorage.setItem(CLEANINGS_KEY, JSON.stringify(list));
+}
+
+function buildCleanings(recalibrations) {
+  const auto = (recalibrations || []).map(r => ({
+    ts:    new Date(r.ts),
+    type:  'auto',
+    label: `Auto-detected: baseline ${r.old_baseline} → ${r.new_baseline} W/GPH (${r.speed_mode} speed)`,
+  }));
+  const manual = loadManualCleanings().map(c => ({
+    ts:    new Date(c.ts),
+    type:  'manual',
+    label: 'Manually logged',
+  }));
+  return [...auto, ...manual].sort((a, b) => +a.ts - +b.ts);
+}
+
+// ── Threshold lines plugin ───────────────────────────────────
+function thresholdLines(lines) {
+  return {
+    id: 'thresholds',
+    afterDraw(chart) {
+      const { ctx, chartArea: a, scales: { y } } = chart;
+      lines.forEach(l => {
+        const yp = y.getPixelForValue(l.y);
+        if (yp < a.top || yp > a.bottom) return;
+        ctx.save();
+        ctx.setLineDash([5,5]);
+        ctx.strokeStyle = hexA(l.color, 0.7);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(a.left,yp); ctx.lineTo(a.right,yp); ctx.stroke();
+        ctx.restore();
+      });
+    }
+  };
+}
+
+// ── Build charts from data ───────────────────────────────────
+function renderCharts(d) {
+  Object.values(charts).forEach(c => c?.destroy());
+  charts = {};
+
+  const alertPct = dashCfg.speeds.low.alertPct;
+  const emergPct = dashCfg.speeds.low.emergencyPct;
+
+  // Filter restriction
+  charts.restriction = new Chart(document.getElementById('chart-restriction'), {
+    type: 'line',
+    data: { labels: d.labels, datasets: [{
+      label: '% above baseline', data: d.restriction,
+      borderColor: C.green, borderWidth: 2, tension: 0.35,
+      pointRadius: 0, pointHoverRadius: 4,
+      pointHoverBackgroundColor: C.green, pointHoverBorderColor: '#0a0b0d', pointHoverBorderWidth: 2,
+      fill: true,
+      backgroundColor: ctx => gradient(ctx.chart.ctx, ctx.chart.chartArea, C.green, 0.28, 0.0),
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...TOOLTIP_BASE, callbacks: {
+          title: items => fmtTime(d.labels[items[0].dataIndex]),
+          label: c => `  ${c.parsed.y >= 0 ? '+' : ''}${c.parsed.y.toFixed(0)}% above clean`,
+        }},
+      },
+      scales: {
+        x: { ...BASE_X, ticks: { ...BASE_X.ticks, callback: v => fmtDay(d.labels[v]) } },
+        y: yAxis({ suggestedMin: -10,
+          max: (() => {
+            const peak = Math.max(...d.restriction, 0);
+            // Always show the alert line with breathing room above it;
+            // scale higher only when data actually exceeds the alert threshold.
+            return Math.ceil(Math.max(peak * 1.25 + 5, alertPct + 25) / 25) * 25;
+          })(),
+          ticks: { color: C.text3, padding: 10, maxTicksLimit: 7,
+            callback: v => (v>0?'+':'') + v + '%' } }),
+      },
+    },
+    plugins: [thresholdLines([
+      { y: alertPct, color: C.amber, label: 'Alert' },
+      { y: emergPct, color: C.red,   label: 'Emergency' },
+    ]), cleaningMarkersPlugin(allCleanings), crosshair],
+  });
+  legend('legend-restriction', [
+    { label: 'Restriction', color: C.green },
+    { label: `Alert +${alertPct}%`,  color: C.amber, dash: true },
+    { label: `Emergency +${emergPct}%`, color: C.red, dash: true },
   ]);
 
-  let errors = [], notifications = [];
-  try { if (errResp.status === "fulfilled"   && errResp.value.ok)   errors        = await errResp.value.json();   } catch {}
-  try { if (notifResp.status === "fulfilled" && notifResp.value.ok) notifications = await notifResp.value.json(); } catch {}
+  // Energy cost — just the wasted delta (clog cost above clean baseline)
+  const peakExtraCost = Math.max(...d.eExtra, 0);
+  charts.energy = new Chart(document.getElementById('chart-energy'), {
+    type: 'bar',
+    data: { labels: d.eLabels, datasets: [
+      { label: 'Extra cost', data: d.eExtra, backgroundColor: hexA(C.amber, 0.85),
+        borderRadius: 6, maxBarThickness: 30 },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...TOOLTIP_BASE, callbacks: {
+          title: items => fmtDay(d.eLabels[items[0].dataIndex]),
+          label: c => c.parsed.y > 0
+            ? `  Extra cost from clog: $${c.parsed.y.toFixed(2)}`
+            : `  No extra cost — filter below alert threshold`,
+        }},
+      },
+      scales: {
+        x: { ...BASE_X, ticks: { ...BASE_X.ticks, maxTicksLimit: 8, callback: v => fmtDay(d.eLabels[v]) } },
+        y: yAxis({ suggestedMax: Math.max(peakExtraCost * 1.3, 0.5),
+          ticks: { color: C.text3, padding: 10, maxTicksLimit: 5, callback: v => '$'+v.toFixed(2) } }),
+      },
+    },
+  });
+  legend('legend-energy', [
+    { label: 'Extra cost from clog', color: C.amber, dot: true },
+  ]);
 
-  const alertEvents = buildAlertEvents(notifications || []);
-  renderAlertHistory(alertEvents);
-  maybeSendDesktopNotifications(alertEvents);
-  renderErrors(errors || []);
+  // Pump workload: extra watts (actual − expected per-band baseline)
+  // Sits near 0 when clean, rises with clogging — independent of speed program switches.
+  const extraWatts = d.watts.map((w, i) => {
+    const exp = d.expectedWatts[i];
+    return exp != null ? w - exp : null;
+  });
+  const peakExtra = Math.max(...extraWatts.filter(v => v != null), 0);
+
+  charts.power = new Chart(document.getElementById('chart-power'), {
+    type: 'line',
+    data: { labels: d.labels, datasets: [{
+      label: 'Extra W', data: extraWatts,
+      borderColor: C.amber, borderWidth: 2, tension: 0.35,
+      pointRadius: 0, pointHoverRadius: 4,
+      pointHoverBackgroundColor: C.amber, pointHoverBorderColor: '#0a0b0d', pointHoverBorderWidth: 2,
+      fill: true,
+      backgroundColor: ctx => gradient(ctx.chart.ctx, ctx.chart.chartArea, C.amber, 0.30, 0.0),
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...TOOLTIP_BASE, callbacks: {
+          title: items => fmtTime(d.labels[items[0].dataIndex]),
+          label: c => {
+            const v = c.parsed.y;
+            if (v == null) return null;
+            const i = c.dataIndex;
+            return [
+              `  Extra: ${v >= 0 ? '+' : ''}${v} W above clean`,
+              `  Actual: ${d.watts[i]} W  ·  Expected: ${d.expectedWatts[i] ?? '—'} W`,
+            ];
+          },
+        }},
+      },
+      scales: {
+        x: { ...BASE_X, ticks: { ...BASE_X.ticks, callback: v => fmtDay(d.labels[v]) } },
+        y: yAxis({
+          suggestedMin: Math.min(...extraWatts.filter(v => v != null), 0) - 5,
+          max: Math.ceil(Math.max(peakExtra * 1.25 + 5, 30) / 10) * 10,
+          ticks: { color: C.text3, padding: 10, maxTicksLimit: 6,
+            callback: v => (v >= 0 ? '+' : '') + v + 'W' },
+        }),
+      },
+    },
+    plugins: [crosshair],
+  });
+  legend('legend-power', [{ label: 'Extra watts above clean baseline', color: C.amber }]);
 }
 
-function buildAlertEvents(notifications) {
-  const byKey = new Map();
-
-  allRows
-    .filter(r => r.level && r.level !== "normal")
-    .forEach(r => byKey.set(alertKey(r), {
-      ts: r.ts,
-      level: r.level,
-      msg: "Logged elevated reading",
-      sub: `${r.mode} speed · ratio ${r.ratio.toFixed(4)} W/GPH · ${r.pct >= 0 ? "+" : ""}${r.pct}% vs baseline`,
-      source: "metric",
-    }));
-
-  notifications
-    .filter(n => n.level && n.level !== "normal")
-    .forEach(n => byKey.set(alertKey(n), {
-      ts: n.ts,
-      level: n.level,
-      msg: n.reason,
-      sub: n.summary,
-      sent: n.sent,
-      source: "notification",
-    }));
-
-  return [...byKey.values()].sort((a, b) => b.ts.localeCompare(a.ts));
+// ── Legend HTML ──────────────────────────────────────────────
+function legend(id, items) {
+  document.getElementById(id).innerHTML = items.map(i => {
+    const cls = i.dash ? 'sw dash' : (i.dot ? 'sw dot' : 'sw');
+    const sty = i.dash ? `color:${i.color}` : `background:${i.color}`;
+    return `<span class="item"><span class="${cls}" style="${sty}"></span>${i.label}</span>`;
+  }).join('');
 }
 
-function alertKey(item) {
-  return `${(item.ts || "").slice(0, 16)}-${item.level || ""}`;
-}
+// ── Update hero from data ────────────────────────────────────
+function setHeroFromData(d) {
+  const nowPct  = d.restriction[d.restriction.length - 1] ?? 0;
+  const peakPct = Math.max(...d.restriction);
+  const latestW = d.watts[d.watts.length - 1] ?? 0;
+  const latestG = d.gpm[d.gpm.length - 1] ?? 0;
+  const lr      = d.latestRow;
 
-function renderAlertHistory(events) {
-  const list = document.getElementById("alerts-list");
-  const recent = events.slice(0, MAX_ALERTS);
-
-  if (!recent.length) {
-    list.innerHTML = `<div class="empty-log">No recorded alerts in the retained logs.</div>`;
-    return;
+  // Status state
+  let word, head, detail, status, glow;
+  if (nowPct >= 300) {
+    word='Action needed'; head='Clean the filter now';
+    detail='Restriction is past the emergency line — flow is choked and the pump is working hard.';
+    status=C.red; glow='rgba(255,69,58,0.22)';
+  } else if (nowPct >= 100) {
+    word='Heads up'; head='Time to rinse the filter';
+    detail='Restriction crossed the alert line. A quick clean will cut energy waste and restore flow.';
+    status=C.amber; glow='rgba(255,159,10,0.20)';
+  } else {
+    word='All clear'; head='Your filter is running clean';
+    detail='No action needed — restriction is well within the normal range.';
+    status=C.green; glow='rgba(48,209,88,0.18)';
   }
 
-  list.innerHTML = recent.map(item => {
-    const badgeClass = item.level === "critical" ? "crit" : "warn";
-    const badgeLabel = item.level === "critical" ? "CRITICAL" : "WARN";
-    const delivery = item.source === "notification"
-      ? (item.sent ? "sent" : "not sent")
-      : "logged";
-    return `
-      <div class="issue-row">
-        <span class="issue-ts">${fmtTime(item.ts)}</span>
-        <span class="issue-badge ${badgeClass}">${badgeLabel}</span>
-        <span class="issue-badge info">${delivery}</span>
-        <span class="issue-msg">${escapeHTML(item.msg || "")}</span>
-        ${item.sub ? `<span class="issue-sub">${escapeHTML(item.sub)}</span>` : ""}
-      </div>`;
-  }).join("");
-}
+  document.getElementById('status-word').textContent = word;
+  document.getElementById('status-headline').textContent = head;
+  document.getElementById('status-detail').textContent = detail;
+  document.getElementById('hero-restriction').textContent = (nowPct>=0?'+':'') + Math.round(nowPct) + '%';
+  document.documentElement.style.setProperty('--status', status);
+  document.getElementById('hero').style.setProperty('--status-glow', glow);
 
-function renderErrors(errors) {
-  const panel = document.getElementById("error-panel");
-  const list  = document.getElementById("error-list");
+  // Speed chip + baseline + updated
+  if (lr) {
+    const mode = lr.mode || 'low';
+    document.getElementById('speed-chip').textContent =
+      mode.charAt(0).toUpperCase() + mode.slice(1) + ' speed';
 
-  if (!errors.length) {
-    panel.style.display = "none";
-    return;
-  }
-
-  const recent = errors
-    .map(e => ({ ts: e.ts, msg: e.message }))
-    .sort((a, b) => b.ts.localeCompare(a.ts))
-    .slice(0, 10);
-
-  list.innerHTML = recent.map(item => {
-    return `
-      <div class="issue-row">
-        <span class="issue-ts">${fmtTime(item.ts)}</span>
-        <span class="issue-badge error">ERROR</span>
-        <span class="issue-msg">${escapeHTML(item.msg || "")}</span>
-      </div>`;
-  }).join("");
-
-  panel.style.display = "block";
-}
-
-function setupDesktopAlerts() {
-  const btn = document.getElementById("desktop-alerts");
-  if (!("Notification" in window)) return;
-
-  btn.hidden = false;
-  desktopAlertsEnabled =
-    localStorage.getItem(DESKTOP_ALERTS_KEY) === "1" &&
-    Notification.permission === "granted";
-  updateDesktopAlertsButton();
-
-  btn.addEventListener("click", async () => {
-    if (desktopAlertsEnabled) {
-      desktopAlertsEnabled = false;
-      localStorage.setItem(DESKTOP_ALERTS_KEY, "0");
-      updateDesktopAlertsButton();
-      return;
+    const modeCfg = dashCfg.speeds[mode] || dashCfg.speeds.low;
+    if (modeCfg.baseline) {
+      document.getElementById('st-baseline').innerHTML =
+        modeCfg.baseline.toFixed(4) + '<small> W/GPH</small>';
     }
 
-    const permission = Notification.permission === "granted"
-      ? "granted"
-      : await Notification.requestPermission();
-
-    desktopAlertsEnabled = permission === "granted";
-    localStorage.setItem(DESKTOP_ALERTS_KEY, desktopAlertsEnabled ? "1" : "0");
-    updateDesktopAlertsButton();
-  });
-}
-
-function updateDesktopAlertsButton() {
-  const btn = document.getElementById("desktop-alerts");
-  btn.textContent = desktopAlertsEnabled ? "Desktop alerts on" : "Desktop alerts";
-  btn.classList.toggle("active", desktopAlertsEnabled);
-}
-
-function maybeSendDesktopNotifications(events) {
-  const sentEvents = events
-    .filter(e => e.source === "notification" && e.sent !== false)
-    .sort((a, b) => a.ts.localeCompare(b.ts));
-  const newest = sentEvents.at(-1)?.ts;
-  const lastSeen = localStorage.getItem(DESKTOP_ALERT_TS_KEY) || "";
-
-  if (!alertHistoryLoaded) {
-    if (!lastSeen && newest) localStorage.setItem(DESKTOP_ALERT_TS_KEY, newest);
-    alertHistoryLoaded = true;
-    return;
+    const ageMin = (Date.now() - new Date(lr.ts)) / 60000;
+    const updEl  = document.getElementById('hero-updated');
+    updEl.textContent = 'checked ' + relAge(lr.ts);
+    updEl.className   = 'updated' + (ageMin > STALE_MIN ? ' stale' : '');
   }
 
-  if (!desktopAlertsEnabled || Notification.permission !== "granted") return;
+  // Stat chips
+  document.getElementById('st-now').innerHTML  = (nowPct>=0?'+':'') + Math.round(nowPct) + '<small>%</small>';
+  document.getElementById('st-peak').innerHTML = (peakPct>=0?'+':'') + Math.round(peakPct) + '<small>%</small>';
+  const half = d.restriction.slice(Math.floor(d.restriction.length / 2));
+  document.getElementById('st-trend').textContent = (half[half.length-1] > half[0]) ? 'Rising' : 'Easing';
+  const expectedW   = lr ? expectedWattsForRow(lr, d.cleanBaselines) : null;
+  const extraW      = expectedW !== null ? latestW - expectedW : null;
 
-  const fresh = sentEvents.filter(e => e.ts > lastSeen);
-  fresh.forEach(e => {
-    new Notification(`Pool Filter ${e.level === "critical" ? "Emergency" : "Alert"}`, {
-      body: e.msg,
-      tag: `pool-monitor-${e.ts}`,
-    });
-  });
-
-  if (newest && newest > lastSeen) localStorage.setItem(DESKTOP_ALERT_TS_KEY, newest);
-}
-
-// ── Auto-refresh (re-reads local CSV/errors only — no Pentair API calls) ─────
-setInterval(() => {
-  if (ratioChart) { ratioChart.destroy(); ratioChart = null; }
-  if (costChart)  { costChart.destroy();  costChart  = null; }
-  if (pfChart)    { pfChart.destroy();    pfChart    = null; }
-  allRows = [];
-  init();
-}, REFRESH_MS);
-
-// ── Range buttons ────────────────────────────────────────────────────────────
-document.querySelectorAll(".range-btn").forEach(btn => {
-  btn.addEventListener("click", e => {
-    document.querySelectorAll(".range-btn").forEach(b => b.classList.remove("active"));
-    e.currentTarget.classList.add("active");
-    rangeDays = +e.currentTarget.dataset.days;
-    render();
-  });
-});
-
-// ── Render all ───────────────────────────────────────────────────────────────
-function render() {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - rangeDays);
-  const rows = allRows.filter(r => new Date(r.ts) >= cutoff);
-  if (!rows.length) return;
-
-  updateStatus(rows[rows.length - 1]);
-  renderRatioChart(rows);
-  renderCostChart(rows);
-  renderPFChart(rows);
-}
-
-// ── Status strip ─────────────────────────────────────────────────────────────
-const STATUS_EMOJI = { normal: "\uD83D\uDFE2", warn: "\uD83D\uDFE1", critical: "\uD83D\uDD34" };
-
-function updateStatus(r) {
-  const badge = document.getElementById("c-status");
-  badge.textContent = (STATUS_EMOJI[r.level] || "") + " " + r.level.toUpperCase();
-  badge.className = "status-badge " + levelClass(r.level);
-
-  document.getElementById("c-mode").textContent = r.mode + " speed";
-  document.getElementById("last-updated").innerHTML =
-    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#4a5568" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>' +
-    fmtTime(r.ts);
-}
-
-// ── Ratio chart ───────────────────────────────────────────────────────────────
-function renderRatioChart(rows) {
-  const labels    = rows.map(r => fmtTime(r.ts));
-  const pcts      = rows.map(r => r.pct);
-  const ptColors  = rows.map(r => LEVEL_COLOR[r.effectiveLevel]);
-  const alertLine = rows.map(r => speedCfg(r.mode).alertPct);
-  const emergLine = rows.map(r => speedCfg(r.mode).emergencyPct);
-
-  const datasets = [
-    {
-      label: "% above baseline",
-      data: pcts,
-      borderColor: "#58a6ff",
-      backgroundColor: "rgba(88,166,255,0.07)",
-      pointBackgroundColor: ptColors,
-      pointBorderColor: ptColors,
-      pointRadius: 3, pointHoverRadius: 5,
-      fill: true, tension: 0.3, order: 1,
-    },
-    {
-      label: thresholdLabel("Alert", rows, "alertPct"),
-      data: alertLine,
-      borderColor: "rgba(210,153,34,0.65)",
-      borderDash: [5, 4], borderWidth: 1.5,
-      pointRadius: 0, fill: false, order: 2,
-    },
-    {
-      label: thresholdLabel("Emergency", rows, "emergencyPct"),
-      data: emergLine,
-      borderColor: "rgba(248,81,73,0.65)",
-      borderDash: [5, 4], borderWidth: 1.5,
-      pointRadius: 0, fill: false, order: 3,
-    },
-  ];
-
-  if (ratioChart) {
-    ratioChart.data.labels = labels;
-    datasets.forEach((ds, i) => {
-      ratioChart.data.datasets[i].label = ds.label;
-      ratioChart.data.datasets[i].data = ds.data;
-    });
-    ratioChart.data.datasets[0].pointBackgroundColor = ptColors;
-    ratioChart.data.datasets[0].pointBorderColor     = ptColors;
-    ratioChart.update("none");
-    return;
+  document.getElementById('st-watts').innerHTML = latestW + '<small>W</small>';
+  document.getElementById('st-gpm').innerHTML   = latestG + '<small>GPM</small>';
+  const extraEl = document.getElementById('st-extra-watts');
+  if (extraW !== null) {
+    extraEl.innerHTML = (extraW > 0 ? '+' : '') + extraW + '<small>W</small>';
+    extraEl.style.color = extraW > 20 ? 'var(--amber)' : 'var(--green)';
+  } else {
+    extraEl.innerHTML = '<small>—</small>';
+    extraEl.style.color = '';
   }
 
-  ratioChart = new Chart(document.getElementById("ratio-chart"), {
-    type: "line", data: { labels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: true,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { labels: { color: TICK, boxWidth: 18, font: { size: 10 } } },
-        tooltip: {
-          backgroundColor: "#1c2128", borderColor: "#30363d", borderWidth: 1,
-          titleColor: "#e6edf3", bodyColor: "#8b949e",
-          callbacks: {
-            label: item => {
-              if (item.datasetIndex !== 0) return "  " + item.dataset.label;
-              const r = rows[item.dataIndex];
-              return [
-                `  ${item.raw >= 0 ? "+" : ""}${item.raw}% vs baseline`,
-                `  Ratio: ${r.ratio.toFixed(4)} W/GPH · baseline ${r.baseline ? r.baseline.toFixed(4) : "n/a"}`,
-                `  Raw: ${r.rawLevel.toUpperCase()} · Alert state: ${r.effectiveLevel.toUpperCase()}`,
-              ];
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: TICK,
-            maxTicksLimit: window.innerWidth < 480 ? 0 : 7,
-            display: window.innerWidth >= 480,
-            font: { size: 10 },
-          },
-          grid: { color: GRID },
-        },
-        y: {
-          ticks: { color: TICK, font: { size: 10 }, callback: v => (v >= 0 ? "+" : "") + v + "%" },
-          grid: { color: GRID },
-        },
-      },
-    },
-  });
-}
+  const totalExtra = d.eExtra.reduce((a,b)=>a+b, 0);
+  const avgExtra   = totalExtra / (d.eExtra.length || 1);
+  document.getElementById('st-avgcost').textContent = '$' + avgExtra.toFixed(2);
+  document.getElementById('st-waste').textContent   = '$' + totalExtra.toFixed(2);
 
-// ── Cost chart ────────────────────────────────────────────────────────────────
-function renderCostChart(rows) {
-  // Group readings by calendar date (YYYY-MM-DD)
-  const byDay = {};
-  rows.forEach(r => {
-    const day = r.ts.slice(0, 10);
-    if (!byDay[day]) byDay[day] = [];
-    byDay[day].push(r);
-  });
-
-  const days   = Object.keys(byDay).sort();
-  const labels = days.map(d => {
-    const dt = new Date(d + "T12:00:00");
-    return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  });
-
-  // For each day: sum actual energy cost and baseline energy cost
-  const actualCosts   = [];
-  const baselineCosts = [];
-  const extraCosts    = [];
-
-  days.forEach(d => {
-    const readings = byDay[d];
-    let actual = 0, baseline = 0;
-    readings.forEach(r => {
-      const kwh = r.watts * POLL_HRS / 1000;
-      actual += kwh * KWH_RATE;
-      if (r.baseline) {
-        const baseWatts = r.baseline * r.gph;
-        baseline += baseWatts * POLL_HRS / 1000 * KWH_RATE;
-      } else {
-        baseline += kwh * KWH_RATE; // no baseline — same as actual
-      }
-    });
-    const extra = Math.max(0, actual - baseline);
-    actualCosts.push(+actual.toFixed(4));
-    baselineCosts.push(+baseline.toFixed(4));
-    extraCosts.push(+extra.toFixed(4));
-  });
-
-  const datasets = [
-    {
-      label: "Baseline cost (clean filter)",
-      data: baselineCosts,
-      backgroundColor: "rgba(88,166,255,0.55)",
-      borderColor: "rgba(88,166,255,0.8)",
-      borderWidth: 1, stack: "cost",
-    },
-    {
-      label: "Extra cost (above baseline)",
-      data: extraCosts,
-      backgroundColor: "rgba(240,136,62,0.65)",
-      borderColor: "rgba(240,136,62,0.9)",
-      borderWidth: 1, stack: "cost",
-    },
-  ];
-
-  if (costChart) {
-    costChart.data.labels = labels;
-    costChart.data.datasets[0].data = baselineCosts;
-    costChart.data.datasets[1].data = extraCosts;
-    costChart.update("none");
-    return;
+  // Forecast
+  const hf = document.querySelector('#hero-forecast .hf-text');
+  const p  = predictClean(d);
+  if (p.overdue) {
+    hf.innerHTML = 'Cleaning is due <b>now</b>';
+  } else if (p.none) {
+    hf.innerHTML = 'No cleaning needed soon <span class="hf-sub">· trend is flat</span>';
+  } else {
+    const [rel, sub] = whenText(p.target, d.now);
+    hf.innerHTML = `Next cleaning likely <b>${rel}</b>` +
+      (sub ? ` <span class="hf-sub">· ${sub}</span>` : '');
   }
-
-  costChart = new Chart(document.getElementById("cost-chart"), {
-    type: "bar", data: { labels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: true,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { labels: { color: TICK, boxWidth: 14, font: { size: 10 } } },
-        tooltip: {
-          backgroundColor: "#1c2128", borderColor: "#30363d", borderWidth: 1,
-          titleColor: "#e6edf3", bodyColor: "#8b949e",
-          callbacks: {
-            label: item => {
-              const label = item.dataset.label;
-              const val   = item.raw;
-              const total = actualCosts[item.dataIndex];
-              if (item.datasetIndex === 1) {
-                return [
-                  `  ${label}: $${val.toFixed(3)}`,
-                  `  Total actual: $${total.toFixed(3)} (@ $${KWH_RATE}/kWh)`,
-                ];
-              }
-              return `  ${label}: $${val.toFixed(3)}`;
-            },
-          },
-        },
-      },
-      scales: {
-        x: { ticks: { color: TICK, font: { size: 10 } }, grid: { color: GRID }, stacked: true },
-        y: {
-          stacked: true,
-          ticks: { color: TICK, font: { size: 10 }, callback: v => "$" + v.toFixed(2) },
-          grid: { color: GRID },
-        },
-      },
-    },
-  });
 }
 
-// ── Power & Flow chart ────────────────────────────────────────────────────────
-function renderPFChart(rows) {
-  const labels    = rows.map(r => fmtTime(r.ts));
-  const wattsData = rows.map(r => r.watts);
-  const gpmData   = rows.map(r => r.gpm !== null ? +r.gpm.toFixed(1) : null);
-
-  const datasets = [
-    {
-      label: "Watts", data: wattsData,
-      borderColor: "#58a6ff", backgroundColor: "rgba(88,166,255,0.06)",
-      fill: true, tension: 0.3, pointRadius: 2, yAxisID: "y",
-    },
-    {
-      label: "GPM", data: gpmData,
-      borderColor: "#bc8cff", backgroundColor: "rgba(188,140,255,0.06)",
-      fill: true, tension: 0.3, pointRadius: 2, yAxisID: "y1",
-    },
-  ];
-
-  if (pfChart) {
-    pfChart.data.labels              = labels;
-    pfChart.data.datasets[0].data   = wattsData;
-    pfChart.data.datasets[1].data   = gpmData;
-    pfChart.update("none");
-    return;
-  }
-
-  pfChart = new Chart(document.getElementById("pf-chart"), {
-    type: "line", data: { labels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: true,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { labels: { color: TICK, boxWidth: 18, font: { size: 10 } } },
-        tooltip: {
-          backgroundColor: "#1c2128", borderColor: "#30363d", borderWidth: 1,
-          titleColor: "#e6edf3", bodyColor: "#8b949e",
-        },
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: TICK,
-            maxTicksLimit: window.innerWidth < 480 ? 0 : 7,
-            display: window.innerWidth >= 480,
-            font: { size: 10 },
-          },
-          grid: { color: GRID },
-        },
-        y:  { position: "left",  ticks: { color: "#58a6ff", font: { size: 10 }, callback: v => v + "W"   }, grid: { color: GRID } },
-        y1: { position: "right", ticks: { color: "#bc8cff", font: { size: 10 }, callback: v => v + " GPM" }, grid: { drawOnChartArea: false } },
-      },
-    },
-  });
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtTime(ts) {
-  const d = new Date(ts);
-  if (isNaN(d)) return ts;
-  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
-
-function levelClass(l) {
-  return l === "normal" ? "ok" : l === "warn" ? "warn" : "crit";
-}
-
+// ── Config loading (matches config.yaml structure) ───────────
 function defaultDashboardConfig() {
   return {
     consecutiveReadingsRequired: 3,
     speeds: {
-      low:  { baseline: null, alertPct: 65, emergencyPct: 300 },
-      high: { baseline: null, alertPct: 65, emergencyPct: 300 },
+      low:  { baseline: null, alertPct: 100, emergencyPct: 300 },
+      high: { baseline: null, alertPct: 100, emergencyPct: 300 },
     },
   };
 }
 
-async function loadDashboardConfig(cacheBust) {
+async function loadDashboardConfig(t) {
   const fallback = defaultDashboardConfig();
   try {
-    const resp = await fetch(CONFIG + "?t=" + cacheBust);
+    const resp = await fetch(FILES.cfg + '?t=' + t);
     if (!resp.ok) return fallback;
     return parseDashboardConfig(await resp.text(), fallback);
-  } catch {
-    return fallback;
-  }
+  } catch { return fallback; }
 }
 
 function parseDashboardConfig(text, cfg) {
-  let section = "";
-  let speed = null;
-
-  text.split("\n").forEach(rawLine => {
-    const line = rawLine.split("#")[0].trimEnd();
+  let section = '', speed = null;
+  text.split('\n').forEach(rawLine => {
+    const line = rawLine.split('#')[0].trimEnd();
     if (!line.trim()) return;
+    if (/^thresholds:\s*$/.test(line)) { section = 'thresholds'; speed = null; return; }
+    if (section !== 'thresholds') return;
 
-    if (/^thresholds:\s*$/.test(line)) {
-      section = "thresholds";
-      speed = null;
-      return;
-    }
+    let m = line.match(/^  consecutive_readings_required:\s*([0-9.]+)/);
+    if (m) { cfg.consecutiveReadingsRequired = +m[1]; return; }
 
-    if (section !== "thresholds") return;
-
-    let match = line.match(/^  consecutive_readings_required:\s*([0-9.]+)/);
-    if (match) {
-      cfg.consecutiveReadingsRequired = +match[1];
-      return;
-    }
-
-    match = line.match(/^  (low_speed|high_speed):\s*$/);
-    if (match) {
-      speed = match[1] === "low_speed" ? "low" : "high";
-      return;
-    }
-
+    m = line.match(/^  (low_speed|high_speed):\s*$/);
+    if (m) { speed = m[1] === 'low_speed' ? 'low' : 'high'; return; }
     if (!speed) return;
 
-    match = line.match(/^    baseline_watts_per_gph:\s*([0-9.]+)/);
-    if (match) {
-      cfg.speeds[speed].baseline = +match[1];
-      return;
-    }
+    m = line.match(/^    baseline_watts_per_gph:\s*([0-9.]+)/);
+    if (m) { cfg.speeds[speed].baseline = +m[1]; return; }
 
-    match = line.match(/^    alert_ratio_pct:\s*([0-9.]+)/);
-    if (match) {
-      cfg.speeds[speed].alertPct = +match[1];
-      return;
-    }
+    m = line.match(/^    alert_ratio_pct:\s*([0-9.]+)/);
+    if (m) { cfg.speeds[speed].alertPct = +m[1]; return; }
 
-    match = line.match(/^    emergency_ratio_pct:\s*([0-9.]+)/);
-    if (match) cfg.speeds[speed].emergencyPct = +match[1];
+    m = line.match(/^    emergency_ratio_pct:\s*([0-9.]+)/);
+    if (m) { cfg.speeds[speed].emergencyPct = +m[1]; }
   });
-
   return cfg;
 }
 
 function speedCfg(mode) {
-  return dashboardConfig.speeds[mode] || dashboardConfig.speeds.low;
+  return dashCfg.speeds[mode] || dashCfg.speeds.low;
 }
 
 function annotateRows(rows) {
-  const window = [];
+  const win = [];
+  const req = dashCfg.consecutiveReadingsRequired;
   rows.forEach(r => {
-    const cfg = speedCfg(r.mode);
-    r.baseline = cfg.baseline || r.rowBaseline || null;
-    r.pct = r.baseline ? +((r.ratio / r.baseline - 1) * 100).toFixed(2) : 0;
-    r.rawLevel = rawLevelForPct(r.pct, r.mode);
+    const cfg   = speedCfg(r.mode);
+    r.baseline  = r.rowBaseline || cfg.baseline || null;
+    r.pct       = r.baseline ? +((r.ratio / r.baseline - 1) * 100).toFixed(2) : 0;
+    r.rawLevel  = rawLevelForPct(r.pct, r.mode);
 
-    window.push(r.rawLevel);
-    if (window.length > dashboardConfig.consecutiveReadingsRequired) window.shift();
+    win.push(r.rawLevel);
+    if (win.length > req) win.shift();
 
-    r.effectiveLevel = "normal";
-    if (window.length >= dashboardConfig.consecutiveReadingsRequired) {
-      if (window.every(level => level === "critical")) {
-        r.effectiveLevel = "critical";
-      } else if (window.every(level => level === "warn" || level === "critical")) {
-        r.effectiveLevel = "warn";
-      }
+    r.effectiveLevel = 'normal';
+    if (win.length >= req) {
+      if (win.every(l => l === 'critical')) r.effectiveLevel = 'critical';
+      else if (win.every(l => l === 'warn' || l === 'critical')) r.effectiveLevel = 'warn';
     }
   });
 }
 
 function rawLevelForPct(pct, mode) {
   const cfg = speedCfg(mode);
-  if (pct >= cfg.emergencyPct) return "critical";
-  if (pct >= cfg.alertPct) return "warn";
-  return "normal";
+  if (pct >= cfg.emergencyPct) return 'critical';
+  if (pct >= cfg.alertPct)     return 'warn';
+  return 'normal';
 }
 
-function thresholdLabel(label, rows, key) {
-  const values = rows
-    .map(r => speedCfg(r.mode)[key])
-    .filter(v => Number.isFinite(v));
-  const uniqueValues = [...new Set(values)];
-  return uniqueValues.length === 1 ? `${label} (${uniqueValues[0]}%)` : `${label} (per mode)`;
+// ── Build chart-ready data from loaded CSV rows ──────────────
+// Derive a clean-filter W/GPH baseline for each 200-GPH flow bucket from all loaded data.
+// Uses the 10th-percentile ratio per bucket — robust against outliers while still reflecting
+// the cleanest operating state observed at that flow target.
+function computeCleanBaselines(rows) {
+  const buckets = {};
+  rows.forEach(r => {
+    if (!r.gph || !r.ratio) return;
+    if (r.mode === 'high') return;  // high-speed ramp contaminates low-speed baselines
+    const band = Math.round(r.gph / 200) * 200;
+    if (!buckets[band]) buckets[band] = [];
+    buckets[band].push(r.ratio);
+  });
+  const result = {};
+  Object.entries(buckets).forEach(([band, ratios]) => {
+    if (ratios.length < 5) return;          // ignore sparse buckets
+    ratios.sort((a, b) => a - b);
+    result[+band] = ratios[Math.floor(ratios.length * 0.10)];
+  });
+  return result;
 }
 
-function escapeHTML(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+function expectedWattsForRow(r, cleanBaselines) {
+  if (!r.gph || !r.ratio) return null;
+  if (r.mode === 'high') return null;  // high-speed ramp: no meaningful baseline, show gap
+  const band = Math.round(r.gph / 200) * 200;
+  const baseline = cleanBaselines[band];
+  return baseline ? Math.round(baseline * r.gph) : null;
 }
 
+function buildRealData(days) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const rows = allRows.filter(r => new Date(r.ts) >= cutoff);
+  if (!rows.length) return null;
+
+  // Build baselines from ALL loaded history, not just the display window,
+  // so we always have clean-filter reference points even for recent dirty periods.
+  const cleanBaselines = computeCleanBaselines(allRows);
+
+  const now    = new Date(rows[rows.length - 1].ts);
+  const labels = rows.map(r => new Date(r.ts));
+  const restriction   = rows.map(r => r.pct);
+  const watts         = rows.map(r => r.watts);
+  const gpm           = rows.map(r => r.gpm !== null ? +r.gpm.toFixed(1) : null);
+  const expectedWatts = rows.map(r => expectedWattsForRow(r, cleanBaselines));
+
+  // Daily energy cost
+  const byDay = {};
+  rows.forEach(r => {
+    const day = r.ts.slice(0, 10);
+    if (!byDay[day]) byDay[day] = [];
+    byDay[day].push(r);
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const dayKeys = Object.keys(byDay).sort().filter(d => d !== today);
+  const eLabels = dayKeys.map(d => new Date(d + 'T12:00:00'));
+  const eBase = [], eExtra = [];
+  dayKeys.forEach(day => {
+    let base = 0, extra = 0;
+    byDay[day].forEach(r => {
+      const actualCost = r.watts * POLL_HRS / 1000 * KWH_RATE;
+      const expW = expectedWattsForRow(r, cleanBaselines);
+      if (expW) {
+        const baseCost = expW * POLL_HRS / 1000 * KWH_RATE;
+        base += baseCost;
+        // Only count as wasted cost when restriction is at or above the alert threshold
+        if (r.pct >= speedCfg(r.mode).alertPct) {
+          extra += Math.max(0, actualCost - baseCost);
+        }
+      } else {
+        base += actualCost;
+      }
+    });
+    eBase.push(+base.toFixed(3));
+    eExtra.push(+extra.toFixed(3));
+  });
+
+  return { now, labels, restriction, watts, gpm, expectedWatts, eLabels, eBase, eExtra,
+           cleanBaselines, latestRow: rows[rows.length - 1] };
+}
+
+// ── Build alert/issue arrays for renderList ──────────────────
+function buildAlerts(notifications) {
+  return (notifications || [])
+    .filter(n => n.level && n.level !== 'normal')
+    .sort((a,b) => b.ts.localeCompare(a.ts))
+    .slice(0, MAX_ALERTS)
+    .map(n => ({
+      time: fmtTime(n.ts),
+      sev:  n.level === 'critical' ? 'emerg' : 'warn',
+      sent: n.sent !== false,
+      msg:  n.reason  || 'Alert fired',
+      tech: n.summary || '',
+    }));
+}
+
+function buildIssues(errors, recalibrations) {
+  const errItems = (errors || []).map(e => ({
+    ts:   e.ts,
+    time: fmtTime(e.ts),
+    sev:  'muted',
+    msg:  e.message || 'Unknown issue',
+    tech: e.detail  || '',
+  }));
+  const cleanItems = (recalibrations || []).map(r => ({
+    ts:   r.ts,
+    time: fmtTime(r.ts),
+    sev:  'ok',
+    msg:  'Filter cleaned — baseline re-learned',
+    tech: `${r.speed_mode} speed · old baseline ${r.old_baseline} W/GPH · new baseline ${r.new_baseline} W/GPH`,
+  }));
+  const manualItems = loadManualCleanings().map(c => ({
+    ts:   c.ts,
+    time: fmtTime(c.ts),
+    sev:  'ok',
+    msg:  'Filter cleaned (manually logged)',
+    tech: 'Recorded via dashboard · stored in browser',
+  }));
+  return [...errItems, ...cleanItems, ...manualItems]
+    .sort((a, b) => b.ts.localeCompare(a.ts))
+    .slice(0, 10);
+}
+
+// ── List rendering ───────────────────────────────────────────
+function sevPill(sev) {
+  const map = { warn:['warn','Warn'], emerg:['emerg','Emergency'], ok:['ok','Resolved'], muted:['muted','Info'] };
+  const [cls, label] = map[sev] || map.muted;
+  return `<span class="pill ${cls}">${label}</span>`;
+}
+function sentPill(sent) {
+  return sent
+    ? `<span class="pill ok">Sent to phone</span>`
+    : `<span class="pill muted">Not sent</span>`;
+}
+
+function renderList(id, items, withSent) {
+  const el = document.getElementById(id);
+  if (!items.length) {
+    el.innerHTML = '<div class="empty">Nothing to report — all quiet.</div>';
+    return;
+  }
+  el.innerHTML = items.map(it => `
+    <div class="row">
+      <div class="row-top">
+        <span class="row-time">${escapeHTML(it.time)}</span>
+        ${sevPill(it.sev)}
+        ${withSent ? sentPill(it.sent) : ''}
+      </div>
+      <div class="row-msg">${escapeHTML(it.msg)}</div>
+      ${it.tech ? `
+      <button class="disclosure" type="button" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Technical detail
+      </button>
+      <div class="row-tech">${escapeHTML(it.tech)}</div>` : ''}
+    </div>`).join('');
+  wireDisclosures();
+}
+
+// ── Cleaning form wiring ─────────────────────────────────────
+function wireCleaningForm() {
+  const openBtn   = document.getElementById('log-cleaning-open');
+  const form      = document.getElementById('cleaning-form');
+  const dtInput   = document.getElementById('cleaning-dt');
+  const saveBtn   = document.getElementById('cleaning-save');
+  const cancelBtn = document.getElementById('cleaning-cancel');
+
+  openBtn.addEventListener('click', () => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    // datetime-local value format: YYYY-MM-DDTHH:MM
+    dtInput.value = now.toISOString().slice(0, 16);
+    form.hidden = false;
+    openBtn.style.display = 'none';
+    dtInput.focus();
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    form.hidden = true;
+    openBtn.style.display = '';
+  });
+
+  saveBtn.addEventListener('click', () => {
+    const val = dtInput.value;
+    if (!val) return;
+    saveManualCleaning(new Date(val).toISOString());
+    form.hidden = true;
+    openBtn.style.display = '';
+    allCleanings = buildCleanings(lastRecalibrations);
+    renderList('issues-list', buildIssues([], lastRecalibrations), false);
+    renderFromData();
+  });
+}
+
+// ── Interactions ─────────────────────────────────────────────
+function wireInfoButtons() {
+  document.querySelectorAll('.info-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const note = document.getElementById(btn.dataset.info);
+      const open = note.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open);
+    });
+  });
+}
+
+function wireDisclosures() {
+  document.querySelectorAll('.disclosure').forEach(btn => {
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', () => {
+      const row  = btn.closest('.row');
+      const open = row.classList.toggle('expanded');
+      btn.setAttribute('aria-expanded', open);
+    });
+  });
+}
+
+// ── Range switching ──────────────────────────────────────────
+document.getElementById('range').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-range]');
+  if (!btn) return;
+  document.querySelectorAll('#range button')
+    .forEach(b => b.setAttribute('aria-selected', b === btn ? 'true' : 'false'));
+  currentDays = +btn.dataset.range;
+  document.querySelector('.controls-row .hint').textContent = `Showing the last ${currentDays} days`;
+  renderFromData();
+});
+
+function renderFromData() {
+  const d = buildRealData(currentDays);
+  if (!d) return;
+  renderCharts(d);
+  setHeroFromData(d);
+}
+
+// ── CSV parse ────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return;
+  const hdrs = lines[0].split(',').map(h => h.trim());
+  allRows = lines.slice(1).map(line => {
+    const v = line.split(',');
+    const o = {};
+    hdrs.forEach((h, i) => o[h] = (v[i] || '').trim());
+    return {
+      ts:          o.timestamp,
+      watts:       +o.power_watts,
+      gph:         +o.flow_gph,
+      gpm:         o.flow_gph ? +o.flow_gph / 60 : null,
+      ratio:       o.watts_per_gph           ? +o.watts_per_gph           : null,
+      rowBaseline: o.baseline_watts_per_gph  ? +o.baseline_watts_per_gph  : null,
+      mode:        o.speed_mode,
+      level:       o.alert_level,
+      rpm:         +o.rpm,
+    };
+  }).filter(r => r.ratio !== null);
+  annotateRows(allRows);
+}
+
+// ── Desktop alerts ───────────────────────────────────────────
+function setupDesktopAlerts() {
+  if (!('Notification' in window)) return;
+  desktopOn = localStorage.getItem(DESKTOP_KEY) === '1' && Notification.permission === 'granted';
+  updateAlertsBtn();
+
+  document.getElementById('alerts-btn').addEventListener('click', async () => {
+    if (desktopOn) {
+      desktopOn = false;
+      localStorage.setItem(DESKTOP_KEY, '0');
+      updateAlertsBtn();
+      return;
+    }
+    const perm = Notification.permission === 'granted'
+      ? 'granted'
+      : await Notification.requestPermission();
+    desktopOn = perm === 'granted';
+    localStorage.setItem(DESKTOP_KEY, desktopOn ? '1' : '0');
+    updateAlertsBtn();
+  });
+}
+
+function updateAlertsBtn() {
+  const btn = document.getElementById('alerts-btn');
+  document.getElementById('alerts-btn-label').textContent = desktopOn ? 'Alerts on' : 'Alerts';
+  btn.classList.toggle('active', desktopOn);
+}
+
+function maybeSendDesktopAlerts(notifications) {
+  const sent = (notifications || [])
+    .filter(n => n.level && n.level !== 'normal' && n.sent !== false)
+    .sort((a,b) => a.ts.localeCompare(b.ts));
+  const newest  = sent.at(-1)?.ts;
+  const lastSeen = localStorage.getItem(DESKTOP_TS_KEY) || '';
+
+  if (!alertsLoaded) {
+    if (!lastSeen && newest) localStorage.setItem(DESKTOP_TS_KEY, newest);
+    alertsLoaded = true;
+    return;
+  }
+  if (!desktopOn || Notification.permission !== 'granted') return;
+
+  sent.filter(n => n.ts > lastSeen).forEach(n => {
+    new Notification(`Pool Filter ${n.level === 'critical' ? 'Emergency' : 'Alert'}`, {
+      body: n.reason || 'Check the dashboard',
+      tag: `pool-monitor-${n.ts}`,
+    });
+  });
+  if (newest && newest > lastSeen) localStorage.setItem(DESKTOP_TS_KEY, newest);
+}
+
+// ── Main init ────────────────────────────────────────────────
+async function init() {
+  const t = Date.now();
+  dashCfg = await loadDashboardConfig(t);
+
+  try {
+    const resp = await fetch(FILES.csv + '?t=' + t);
+    if (!resp.ok) throw new Error(resp.status);
+    parseCSV(await resp.text());
+  } catch {
+    document.getElementById('status-headline').textContent = 'Could not load metrics.csv';
+    document.getElementById('status-detail').textContent   = 'Check that the monitor is running and the logs/ directory exists.';
+    document.getElementById('hero-updated').textContent    = 'load error';
+    return;
+  }
+
+  if (!allRows.length) {
+    document.getElementById('status-headline').textContent = 'No data yet';
+    document.getElementById('status-detail').textContent   = 'The monitor will populate this dashboard on its first poll.';
+    document.getElementById('hero-updated').textContent    = 'no readings';
+    return;
+  }
+
+  // Alerts, issues, and recalibrations in parallel
+  const [notifRes, errRes, recalRes] = await Promise.allSettled([
+    fetch(FILES.notif  + '?t=' + t),
+    fetch(FILES.err    + '?t=' + t),
+    fetch(FILES.recal  + '?t=' + t),
+  ]);
+  let notifications = [], errors = [], recalibrations = [];
+  try { if (notifRes.status==='fulfilled' && notifRes.value.ok) notifications  = await notifRes.value.json(); } catch {}
+  try { if (errRes.status==='fulfilled'   && errRes.value.ok)   errors         = await errRes.value.json();   } catch {}
+  try { if (recalRes.status==='fulfilled' && recalRes.value.ok) recalibrations = await recalRes.value.json(); } catch {}
+
+  lastRecalibrations = recalibrations;
+  allCleanings       = buildCleanings(recalibrations);
+
+  renderList('alerts-list', buildAlerts(notifications),            true);
+  renderList('issues-list', buildIssues(errors, recalibrations),   false);
+  maybeSendDesktopAlerts(notifications);
+
+  renderFromData();
+}
+
+// ── Auto-refresh ─────────────────────────────────────────────
+setInterval(() => {
+  allRows = [];
+  init();
+}, REFRESH_MS);
+
+// ── Boot ─────────────────────────────────────────────────────
+wireInfoButtons();
+wireCleaningForm();
 setupDesktopAlerts();
 init();
 </script>

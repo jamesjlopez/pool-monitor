@@ -24,3 +24,6 @@ logs/*.log
 logs/*.csv
 logs/*.json
 logs/*/
+
+# Design handoff / scratch work
+tmp/

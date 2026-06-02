@@ -51,6 +51,21 @@ The pump runs in **flow-control mode**: it adjusts RPM automatically to maintain
 - WARN sends a high-priority iOS notification (⚠️); CRITICAL sends an urgent alert that bypasses silent mode (🚨).
 - **Emergency shutoff:** if all 3 confirmation readings are CRITICAL, the pump is turned off via the API after a 30-second warning notification. A follow-up notification confirms the pump stopped (or instructs manual shutoff if the API call fails).
 
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Language | Python 3.14 |
+| Pentair auth | AWS Cognito (`pycognito`) + AWS Signature V4 (`boto3`, `requests-aws4auth`) |
+| HTTP client | `requests` |
+| Config | YAML (`pyyaml`) |
+| Scheduling | `schedule` library (continuous mode) + macOS launchd / Linux systemd / cron |
+| Push notifications | [ntfy.sh](https://ntfy.sh) (HTTP POST, no SDK) |
+| Dashboard | Single-file HTML + [Chart.js 4.4](https://www.chartjs.org/) (no build step, no framework) |
+| Tests | pytest + pytest-mock (offline, fixture-based — no live pump required) |
+
+> **For designers:** the dashboard (`index.html`) is a standalone static file — plain HTML/CSS/JS, no React or bundler. The monitor backend is headless Python with no web server. Push alerts go to iOS via the ntfy app.
+
 ## Setup
 
 ### 1. Install dependencies
