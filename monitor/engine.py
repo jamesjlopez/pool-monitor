@@ -17,6 +17,7 @@ import time
 from collections import deque
 from typing import Optional
 
+from .profiles import is_high_program_low_speed_profile
 from .types import AlertLevel, EngineResult, PumpStatus
 
 log = logging.getLogger(__name__)
@@ -90,6 +91,17 @@ class Engine:
                 level=AlertLevel.NORMAL,
                 reason=f"Startup grace period ({remaining:.0f}s remaining)",
                 speed_mode=status.speed_mode,
+            )
+
+        if is_high_program_low_speed_profile(status):
+            return EngineResult(
+                level=AlertLevel.NORMAL,
+                reason=(
+                    "High-speed program is reporting a low-speed/low-load profile — "
+                    "awaiting a stable telemetry read"
+                ),
+                speed_mode=status.speed_mode,
+                pending_elevated=True,
             )
 
         raw_result = self._evaluate(status)

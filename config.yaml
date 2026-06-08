@@ -29,7 +29,7 @@ thresholds:
     # Speed mode: pump program name contains "low", OR RPM < 1500
     alert_psi: 12
     emergency_psi: 18
-    baseline_watts_per_gph: 0.1536    # clean-filter reading 2026-05-14 08:39 CDT: 539W / 3510 GPH
+    baseline_watts_per_gph: 0.158    # auto-recalibrated 2026-06-05 17:15
     alert_ratio_pct: 100              # WARN if ratio >100% above clean baseline
     emergency_ratio_pct: 300          # CRITICAL if ratio >300% above clean baseline
 

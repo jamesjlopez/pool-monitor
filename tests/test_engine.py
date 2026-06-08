@@ -117,6 +117,43 @@ class TestNormalOperation:
         assert result.pending_elevated
         assert "status switch disabled" in result.reason
 
+    def test_high_program_low_speed_profile_waits_for_stable_read(self):
+        engine = Engine(CALIBRATED_CONFIG)
+        status = PumpStatus(
+            rpm=1024,
+            power_watts=62,
+            flow_gph=3510,
+            is_running=True,
+            speed_mode="high",
+        )
+        result = engine.process(status)
+        assert result.level == AlertLevel.NORMAL
+        assert result.pending_elevated
+        assert "awaiting a stable telemetry read" in result.reason
+
+    def test_normal_high_schedule_profile_with_restored_baseline(self):
+        config = {
+            "thresholds": {
+                **CALIBRATED_CONFIG["thresholds"],
+                "high_speed": {
+                    **CALIBRATED_CONFIG["thresholds"]["high_speed"],
+                    "baseline_watts_per_gph": 0.1929,
+                    "alert_ratio_pct": 100,
+                    "emergency_ratio_pct": 300,
+                },
+            }
+        }
+        engine = Engine(config)
+        schedule_high = PumpStatus(
+            rpm=1940,
+            power_watts=691,
+            flow_gph=2148,
+            is_running=True,
+            speed_mode="high",
+        )
+        results = feed_n(engine, schedule_high, 3)
+        assert results[-1].level == AlertLevel.NORMAL
+
 
 class TestWarnThreshold:
     def test_warn_fires_after_3_consecutive_readings(self):

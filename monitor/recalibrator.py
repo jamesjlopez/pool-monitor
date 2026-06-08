@@ -27,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from .profiles import is_bypass_or_drain_profile
 from .types import PumpStatus
 
 log = logging.getLogger(__name__)
@@ -41,6 +42,8 @@ ELEVATED_HISTORY_SIZE = 12   # ~6 hours at 30-min polls
 CLEAN_LANDING        = 1.12  # within 12% above baseline counts as clean
 # Consecutive clean-landing readings required to confirm a cleaning event
 CLEAN_READINGS_REQUIRED = 3
+# Clean samples should be stable; bypass/drain events can create a single ultra-low outlier.
+CLEAN_WINDOW_MAX_SPREAD = 0.20
 # Don't bother updating config.yaml if baseline shift is trivial
 MIN_BASELINE_CHANGE  = 0.003
 
@@ -88,6 +91,15 @@ class Recalibrator:
         if not baseline:
             return None
 
+        if is_bypass_or_drain_profile(status, baseline):
+            log.info(
+                "Ignoring bypass/drain-like telemetry for recalibration [%s]: "
+                "RPM=%d, %.0fW, %.0f GPH, ratio=%.4f",
+                speed_mode, status.rpm, status.power_watts, status.flow_gph, ratio,
+            )
+            self._clean_window[speed_mode].clear()
+            return None
+
         pct_of_baseline = ratio / baseline
         self._history[speed_mode].append(pct_of_baseline)
 
@@ -120,8 +132,20 @@ class Recalibrator:
             self._clean_window[speed_mode].clear()
             return None
 
+        clean_ratios = list(self._clean_window[speed_mode])
+        low = min(clean_ratios)
+        high = max(clean_ratios)
+        if low <= 0 or (high - low) / low > CLEAN_WINDOW_MAX_SPREAD:
+            log.info(
+                "Clean-landing readings [%s] are too unstable for recalibration "
+                "(min %.4f, max %.4f) — ignoring event",
+                speed_mode, low, high,
+            )
+            self._clean_window[speed_mode].clear()
+            return None
+
         new_baseline = round(
-            sum(self._clean_window[speed_mode]) / len(self._clean_window[speed_mode]),
+            sum(clean_ratios) / len(clean_ratios),
             4,
         )
         self._clean_window[speed_mode].clear()
