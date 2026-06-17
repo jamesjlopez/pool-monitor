@@ -1,5 +1,7 @@
 """Telemetry profile helpers shared by alerting and baseline learning."""
 
+from __future__ import annotations
+
 from .types import PumpStatus
 
 

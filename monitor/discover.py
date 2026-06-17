@@ -19,6 +19,8 @@ After capture, inspect logs/discovery/*.json to find:
 Document findings in docs/api_notes.md.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os

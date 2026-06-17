@@ -23,6 +23,9 @@ from .types import AlertLevel, EngineResult, PumpStatus
 log = logging.getLogger(__name__)
 
 
+UNCALIBRATED_WARN_RATIO = 0.30
+UNCALIBRATED_CRITICAL_RATIO = 0.60
+
 
 class Engine:
     def __init__(self, config: dict):
@@ -106,8 +109,8 @@ class Engine:
 
         raw_result = self._evaluate(status)
 
-        # Zero-flow: suppress the first reading (could be a transient/API glitch) and
-        # trigger fast-confirm polling. A second consecutive zero-flow escalates to CRITICAL.
+        # Zero-flow while running is serious enough to warn immediately and trigger
+        # fast-confirm polling. A second consecutive zero-flow escalates to CRITICAL.
         if status.flow_gph <= 0 and raw_result.level > AlertLevel.NORMAL:
             self._zero_flow_streak += 1
             if self._zero_flow_streak >= 2:
@@ -121,9 +124,12 @@ class Engine:
                     consecutive_count=self._zero_flow_streak,
                 )
             return EngineResult(
-                level=AlertLevel.NORMAL,
-                reason=f"Zero flow detected — awaiting confirmation (1/2)",
+                level=raw_result.level,
+                reason=f"{raw_result.reason} — awaiting confirmation (1/2)",
                 speed_mode=raw_result.speed_mode,
+                watts_per_gph=raw_result.watts_per_gph,
+                baseline_watts_per_gph=raw_result.baseline_watts_per_gph,
+                consecutive_count=self._zero_flow_streak,
                 pending_elevated=True,
             )
 
@@ -200,11 +206,23 @@ class Engine:
             else:
                 reason = f"Normal — ratio {ratio:.4f} W/GPH ({deviation_pct:+.0f}% vs baseline)"
         else:
-            # No calibrated baseline — report NORMAL only; cannot detect clogging without baseline
-            reason = (
-                f"Flow {status.flow_gph:.0f} GPH, power {status.power_watts:.0f}W "
-                f"(no baseline — set baseline_watts_per_gph in config.yaml after next backwash)"
-            )
+            if ratio >= UNCALIBRATED_CRITICAL_RATIO:
+                level = AlertLevel.CRITICAL
+                reason = (
+                    f"Severely restricted flow: efficiency ratio {ratio:.4f} W/GPH "
+                    f"without a calibrated baseline — set baseline_watts_per_gph after next backwash"
+                )
+            elif ratio >= UNCALIBRATED_WARN_RATIO:
+                level = AlertLevel.WARN
+                reason = (
+                    f"Restricted flow: efficiency ratio {ratio:.4f} W/GPH "
+                    f"without a calibrated baseline — set baseline_watts_per_gph after next backwash"
+                )
+            else:
+                reason = (
+                    f"Flow {status.flow_gph:.0f} GPH, power {status.power_watts:.0f}W "
+                    f"(no baseline — set baseline_watts_per_gph in config.yaml after next backwash)"
+                )
 
         return EngineResult(
             level=level,

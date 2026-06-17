@@ -27,11 +27,11 @@ python -m monitor.runner
 python -m monitor.runner --test-notify
 
 # Serve the dashboard locally (from project root)
-python -m http.server 8080
-# Then open http://localhost:8080/index.html
+python -m http.server 8081
+# Then open http://localhost:8081/index.html
 ```
 
-The launchd service `com.james.pool-dashboard` already serves the dashboard at port 8080 from the project root on this machine.
+The launchd service `com.james.pool-dashboard` serves the dashboard at port 8081 from the project root on this machine.
 
 ## Architecture
 

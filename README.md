@@ -55,7 +55,7 @@ The pump runs in **flow-control mode**: it adjusts RPM automatically to maintain
 
 | Layer | Technology |
 |---|---|
-| Language | Python 3.14 |
+| Language | Python 3.10+ |
 | Pentair auth | AWS Cognito (`pycognito`) + AWS Signature V4 (`boto3`, `requests-aws4auth`) |
 | HTTP client | `requests` |
 | Config | YAML (`pyyaml`) |
