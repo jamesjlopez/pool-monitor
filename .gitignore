@@ -28,3 +28,6 @@ logs/*/
 
 # Design handoff / scratch work
 tmp/
+
+# Local deploy-link scratch, never commit
+redirectTo.md
