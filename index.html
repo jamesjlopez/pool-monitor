@@ -709,6 +709,10 @@ let currentDays       = 7;
 let charts            = {};
 let allCleanings      = [];   // { ts: Date, type: 'auto'|'manual', ... }
 let lastRecalibrations = [];  // raw recalibrations.json array
+let lastNotifications = [];   // raw notifications.json array
+let lastErrors        = [];   // raw errors.json array
+let alertsExpanded    = false;
+let issuesExpanded    = false;
 let desktopOn         = false;
 let alertsLoaded      = false;
 const DESKTOP_KEY     = 'poolMonitorDesktopAlerts';
@@ -1331,11 +1335,10 @@ function buildRealData(days) {
 }
 
 // ── Build alert/issue arrays for renderList ──────────────────
-function buildAlerts(notifications) {
-  return (notifications || [])
+function buildAlerts(notifications, limit = MAX_ALERTS) {
+  const alerts = (notifications || [])
     .filter(n => n.level && n.level !== 'normal')
     .sort((a,b) => b.ts.localeCompare(a.ts))
-    .slice(0, MAX_ALERTS)
     .map(n => ({
       time: fmtTime(n.ts),
       sev:  n.level === 'critical' ? 'emerg' : 'warn',
@@ -1343,9 +1346,10 @@ function buildAlerts(notifications) {
       msg:  n.reason  || 'Alert fired',
       tech: n.summary || '',
     }));
+  return limit === null ? alerts : alerts.slice(0, limit);
 }
 
-function buildIssues(errors, recalibrations) {
+function buildIssues(errors, recalibrations, limit = MAX_ALERTS) {
   const errItems = (errors || []).map(e => ({
     ts:   e.ts,
     time: fmtTime(e.ts),
@@ -1367,9 +1371,9 @@ function buildIssues(errors, recalibrations) {
     msg:  'Filter cleaned (manually logged)',
     tech: 'Recorded via dashboard · stored in browser',
   }));
-  return [...errItems, ...cleanItems, ...manualItems]
-    .sort((a, b) => b.ts.localeCompare(a.ts))
-    .slice(0, 10);
+  const issues = [...errItems, ...cleanItems, ...manualItems]
+    .sort((a, b) => b.ts.localeCompare(a.ts));
+  return limit === null ? issues : issues.slice(0, limit);
 }
 
 // ── List rendering ───────────────────────────────────────────
@@ -1408,6 +1412,22 @@ function renderList(id, items, withSent) {
   wireDisclosures();
 }
 
+function renderActivityLists() {
+  const alerts = buildAlerts(lastNotifications, alertsExpanded ? null : MAX_ALERTS);
+  const issues = buildIssues(lastErrors, lastRecalibrations, issuesExpanded ? null : MAX_ALERTS);
+  renderList('alerts-list', alerts, true);
+  renderList('issues-list', issues, false);
+
+  const alertsButton = document.getElementById('view-all-alerts');
+  const issuesButton = document.getElementById('view-full-log');
+  alertsButton.hidden = buildAlerts(lastNotifications, null).length <= MAX_ALERTS;
+  issuesButton.hidden = buildIssues(lastErrors, lastRecalibrations, null).length <= MAX_ALERTS;
+  alertsButton.textContent = alertsExpanded ? 'Show recent alerts' : 'View all alerts';
+  issuesButton.textContent = issuesExpanded ? 'Show recent log' : 'View full log';
+  alertsButton.setAttribute('aria-expanded', String(alertsExpanded));
+  issuesButton.setAttribute('aria-expanded', String(issuesExpanded));
+}
+
 // ── Cleaning form wiring ─────────────────────────────────────
 function wireCleaningForm() {
   const openBtn   = document.getElementById('log-cleaning-open');
@@ -1438,7 +1458,7 @@ function wireCleaningForm() {
     form.hidden = true;
     openBtn.style.display = '';
     allCleanings = buildCleanings(lastRecalibrations);
-    renderList('issues-list', buildIssues([], lastRecalibrations), false);
+    renderActivityLists();
     renderFromData();
   });
 }
@@ -1463,6 +1483,17 @@ function wireDisclosures() {
       const open = row.classList.toggle('expanded');
       btn.setAttribute('aria-expanded', open);
     });
+  });
+}
+
+function wireActivityHistoryControls() {
+  document.getElementById('view-all-alerts').addEventListener('click', () => {
+    alertsExpanded = !alertsExpanded;
+    renderActivityLists();
+  });
+  document.getElementById('view-full-log').addEventListener('click', () => {
+    issuesExpanded = !issuesExpanded;
+    renderActivityLists();
   });
 }
 
@@ -1593,11 +1624,12 @@ async function init() {
   try { if (errRes.status==='fulfilled'   && errRes.value.ok)   errors         = await errRes.value.json();   } catch {}
   try { if (recalRes.status==='fulfilled' && recalRes.value.ok) recalibrations = await recalRes.value.json(); } catch {}
 
+  lastNotifications  = notifications;
+  lastErrors         = errors;
   lastRecalibrations = recalibrations;
   allCleanings       = buildCleanings(recalibrations);
 
-  renderList('alerts-list', buildAlerts(notifications),            true);
-  renderList('issues-list', buildIssues(errors, recalibrations),   false);
+  renderActivityLists();
   maybeSendDesktopAlerts(notifications);
 
   renderFromData();
@@ -1612,6 +1644,7 @@ setInterval(() => {
 // ── Boot ─────────────────────────────────────────────────────
 wireInfoButtons();
 wireCleaningForm();
+wireActivityHistoryControls();
 setupDesktopAlerts();
 init();
 </script>
