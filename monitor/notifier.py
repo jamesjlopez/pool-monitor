@@ -16,7 +16,7 @@ from .types import AlertLevel
 
 log = logging.getLogger(__name__)
 
-DASHBOARD_URL = "https://jamess-mac-mini.tail02a1a0.ts.net/pool-monitor/"
+DASHBOARD_URL = "https://jamess-mac-studio.tail02a1a0.ts.net/pool-monitor/"
 
 
 class NtfyNotifier:
