@@ -57,6 +57,11 @@ class Engine:
         self._zero_flow_streak = 0
         log.info("Pump start detected — grace period active for %ds", self._grace_seconds)
 
+    def reset_alert_history(self) -> None:
+        """Discard a completed alert sequence after an emergency stop succeeds."""
+        self._window.clear()
+        self._zero_flow_streak = 0
+
     def process(self, status: PumpStatus) -> EngineResult:
         """Evaluate one reading and return the effective alert level."""
         if not status.is_running or status.rpm == 0:

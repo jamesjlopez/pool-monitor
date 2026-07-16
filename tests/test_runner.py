@@ -112,3 +112,45 @@ class TestRunOnce:
         client.turn_off = mocker.MagicMock(return_value=True)
         run_once(client, engine, notifier, CALIBRATED_CONFIG)
         client.turn_off.assert_not_called()
+
+    def test_successful_shutoff_requires_fresh_confirmation_after_restart(self, mocker, tmp_path):
+        import monitor.runner as runner
+
+        extreme = PumpStatus(rpm=1050, power_watts=300, flow_gph=200, is_running=True)
+        config = {
+            **CALIBRATED_CONFIG,
+            "thresholds": {
+                **CALIBRATED_CONFIG["thresholds"],
+                "consecutive_readings_required": 3,
+            },
+            "emergency_shutoff": {
+                "enabled": True,
+                "consecutive_required": 1,
+                "delay_seconds": 0,
+            },
+        }
+        client = mocker.MagicMock()
+        client.get_status.side_effect = [extreme, extreme, extreme, extreme]
+        client.turn_off.return_value = True
+        client.set_pump_enabled.return_value = True
+        notifier = mocker.MagicMock(spec=NtfyNotifier)
+        notifier.send_alert.return_value = True
+        engine = Engine(config)
+        mocker.patch("monitor.runner.time.sleep")
+        mocker.patch.object(runner, "PROJECT_ROOT", tmp_path)
+        runner._critical_streak = 0
+
+        for _ in range(3):
+            result = run_once(client, engine, notifier, config)
+
+        assert result.level == AlertLevel.CRITICAL
+        assert client.turn_off.call_count == 1
+        assert list(engine._window) == []
+        assert runner._critical_streak == 0
+
+        # The same restarted-pump reading is only the first of a new 3-reading
+        # confirmation window, not an immediate second shutoff.
+        result = run_once(client, engine, notifier, config)
+        assert result.level == AlertLevel.NORMAL
+        assert result.pending_elevated
+        assert client.turn_off.call_count == 1

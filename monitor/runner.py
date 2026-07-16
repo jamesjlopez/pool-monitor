@@ -250,7 +250,11 @@ def run_once(
         and config.get("emergency_shutoff", {}).get("enabled", False)
         and not dry_run
     ):
-        _trigger_shutoff(client, notifier, config, status)
+        if _trigger_shutoff(client, notifier, config, status):
+            # A later manual restart must earn a new confirmation sequence. Without
+            # this reset, the completed CRITICAL window can stop it after one poll.
+            _critical_streak = 0
+            engine.reset_alert_history()
 
     return result
 
@@ -393,7 +397,7 @@ def _status_summary(status: PumpStatus) -> str:
     )
 
 
-def _trigger_shutoff(client, notifier: NtfyNotifier, config: dict, status: PumpStatus):
+def _trigger_shutoff(client, notifier: NtfyNotifier, config: dict, status: PumpStatus) -> bool:
     delay = config.get("emergency_shutoff", {}).get("delay_seconds", 30)
     log.error("EMERGENCY SHUTOFF — confirmed CRITICAL pressure. Turning off in %ds.", delay)
     notifier.send_alert(
@@ -426,6 +430,7 @@ def _trigger_shutoff(client, notifier: NtfyNotifier, config: dict, status: PumpS
                     "speed_mode": status.speed_mode,
                 },
             }) + "\n")
+        return True
     else:
         log.error("Emergency shutoff FAILED — could not set Pump Status switch via API.")
         notifier.send_alert(
@@ -433,6 +438,7 @@ def _trigger_shutoff(client, notifier: NtfyNotifier, config: dict, status: PumpS
             "\U0001f534 SHUTOFF FAILED — could not reach pump API. Turn off manually immediately.",
             _status_summary(status),
         )
+        return False
 
 
 # ------------------------------------------------------------------
