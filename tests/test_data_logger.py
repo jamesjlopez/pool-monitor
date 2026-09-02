@@ -65,6 +65,8 @@ class TestDataLogger:
             "active_reference": "3",
             "active_setpoint": 705.0,
         }
+        status.motor_speed_pct = 70.5
+        status.telemetry_version = "device-update|pressure-update|watts-update|flow-update"
 
         DataLogger(path).log(status, make_result())
 
@@ -72,6 +74,8 @@ class TestDataLogger:
         assert row["active_program"] == "Low speed"
         assert row["active_reference"] == "3"
         assert float(row["active_setpoint"]) == 705.0
+        assert float(row["motor_speed_pct"]) == 70.5
+        assert row["telemetry_version"] == "device-update|pressure-update|watts-update|flow-update"
 
     def test_skips_pump_off(self, tmp_path):
         path = tmp_path / "metrics.csv"

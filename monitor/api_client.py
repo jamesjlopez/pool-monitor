@@ -289,6 +289,7 @@ def _parse_status(device_data: dict) -> PumpStatus:
     # the legacy rpm field until the historical CSV schema can be retired.
     rpm         = int(pressure_raw)
     pressure_psi = pressure_raw / 100 if pressure_raw > 0 else None
+    motor_speed_pct = fval("s19", 0.0) / 10 if "s19" in fields else None
     power_watts = fval("s18", 0.0)
     flow_gph    = fval("s26", 0.0) / 10.0 * 60.0  # s26: tenths GPM → GPH
     active_setpoint = fval("s16", 0.0)  # unit is determined by s15 / program reference
@@ -322,6 +323,7 @@ def _parse_status(device_data: dict) -> PumpStatus:
         flow_gph=flow_gph,
         is_running=is_running,
         pressure_psi=pressure_psi,
+        motor_speed_pct=motor_speed_pct,
         speed_mode=speed_mode if is_running else "off",
         telemetry_version=telemetry_version or None,
         raw={

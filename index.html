@@ -1430,7 +1430,7 @@ function flowKey(r) {
   if (r.activeProgram && r.activeReference !== '' && r.activeSetpoint !== null) {
     return `program:${r.activeProgram}|ref:${r.activeReference}|setpoint:${r.activeSetpoint}`;
   }
-  return `legacy:${r.mode}`;
+  return null;
 }
 
 function computeCleanFlowReferences(rows) {
@@ -1438,6 +1438,7 @@ function computeCleanFlowReferences(rows) {
   rows.forEach(r => {
     if (!r.gph) return;
     const key = flowKey(r);
+    if (!key) return;
     (groups[key] ||= []).push(r.gph);
   });
   const references = {};
@@ -1450,7 +1451,9 @@ function computeCleanFlowReferences(rows) {
 }
 
 function flowReferenceForRow(r, references) {
-  return references[flowKey(r)] ?? null;
+  const key = flowKey(r);
+  if (!key) return null;
+  return references[key] ?? null;
 }
 
 function buildRealData(days) {
@@ -1710,6 +1713,8 @@ function parseCSV(text) {
       activeReference: o.active_reference || '',
       activeSetpoint: o.active_setpoint === '' ? null : +o.active_setpoint,
       telemetryQuality: o.telemetry_quality || 'legacy',
+      motorSpeedPct: o.motor_speed_pct === '' ? null : +o.motor_speed_pct,
+      telemetryVersion: o.telemetry_version || null,
     };
   }).filter(r => r.ratio !== null);
   annotateRows(allRows);

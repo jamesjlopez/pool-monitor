@@ -38,3 +38,11 @@ def test_duplicate_cloud_snapshots_are_excluded_from_chart_data():
 
     assert "r.telemetryQuality !== 'duplicate'" in html
     assert "telemetryQuality: o.telemetry_quality || 'legacy'" in html
+
+
+def test_return_flow_reference_never_compares_legacy_rows_by_mode_alone():
+    """Old rows lack program context, so their flow loss is unknowable."""
+    html = DASHBOARD.read_text()
+
+    assert "return null;" in html[html.index("function flowKey(r)"):html.index("function computeCleanFlowReferences(rows)")]
+    assert "if (!key) return null;" in html[html.index("function flowReferenceForRow"):html.index("function buildRealData(days)")]

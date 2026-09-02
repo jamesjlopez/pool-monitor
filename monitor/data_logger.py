@@ -20,6 +20,7 @@ COLUMNS = [
     "timestamp", "rpm", "power_watts", "flow_gph",
     "watts_per_gph", "speed_mode", "alert_level", "baseline_watts_per_gph",
     "telemetry_quality", "active_program", "active_reference", "active_setpoint", "pressure_psi",
+    "motor_speed_pct", "telemetry_version",
 ]
 
 
@@ -74,6 +75,8 @@ class DataLogger:
             status.raw.get("active_reference", ""),
             status.raw.get("active_setpoint", ""),
             round(status.pressure_psi, 2) if status.pressure_psi is not None else "",
+            round(status.motor_speed_pct, 1) if status.motor_speed_pct is not None else "",
+            status.telemetry_version or "",
         ]
         with open(self._path, "a", newline="") as f:
             csv.writer(f).writerow(row)

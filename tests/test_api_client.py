@@ -65,7 +65,8 @@ class TestFixtureParsing:
             "fields": {
                 "s3": {"value": "1"}, "s14": {"value": "1"},
                 "s15": {"value": "3"}, "s16": {"value": "705"},
-                "s17": {"value": "1050"}, "s18": {"value": "148"}, "s26": {"value": "303"},
+                "s17": {"value": "1050"}, "s18": {"value": "148"},
+                "s19": {"value": "705"}, "s26": {"value": "303"},
                 "zp2e2": {"value": "Low speed"},
             },
         })
@@ -74,6 +75,7 @@ class TestFixtureParsing:
         assert status.raw["active_reference"] == "3"
         assert status.raw["active_setpoint"] == 705.0
         assert status.pressure_psi == 10.5
+        assert status.motor_speed_pct == 70.5
 
     def test_low_clean_speed_mode(self):
         client = MockPentairClient(fixture_path=FIXTURES / "pump_low_clean.json")
