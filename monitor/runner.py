@@ -264,14 +264,18 @@ def _check_trend(
     notifier: "NtfyNotifier",
     config: dict,
     dry_run: bool,
+    active_mode: Optional[str] = None,
 ) -> None:
-    """Run trend analysis and notify if a threshold crossing is imminent."""
+    """Run a forecast only for the pump program that is currently running."""
     global _last_trend_check
     now = time.time()
     if now - _last_trend_check < TREND_CHECK_INTERVAL_HOURS * 3600:
         return
+    if active_mode not in {"low", "high"}:
+        log.debug("Skipping trend forecast: pump is not currently running")
+        return
     _last_trend_check = now
-    warning = trend_analyzer.check(config)
+    warning = trend_analyzer.check(config, active_mode=active_mode)
     if warning:
         if dry_run:
             log.info("[DRY RUN] Trend warning: %s", warning.message)
@@ -339,7 +343,10 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
                     if result is None or not result.pending_elevated:
                         break
 
-            _check_trend(trend_analyzer, notifier, config, dry_run)
+            _check_trend(
+                trend_analyzer, notifier, config, dry_run,
+                active_mode=result.speed_mode if result else None,
+            )
 
         except KeyboardInterrupt:
             log.info("Shutting down — goodbye")
@@ -526,7 +533,10 @@ def main():
                 if result is None or not result.pending_elevated:
                     break
 
-        _check_trend(trend_analyzer, notifier, config, args.dry_run)
+        _check_trend(
+            trend_analyzer, notifier, config, args.dry_run,
+            active_mode=result.speed_mode if result else None,
+        )
 
         if not args.dry_run:
             _save_state(engine, notifier)

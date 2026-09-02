@@ -754,18 +754,75 @@ function hexA(hex, a) {
 }
 
 // ── Forecast ─────────────────────────────────────────────────
+function median(values) {
+  const sorted = [...values].sort((a,b) => a-b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
+}
+
+function forecastSamples(d) {
+  const mode = d.latestRow?.mode;
+  if (mode !== 'low' && mode !== 'high') return [];
+
+  // A cleaning trend belongs to one pump program.  Summarizing each day with a
+  // median prevents retry polls and a short-lived telemetry spike from getting
+  // extra weight in the forecast.
+  const byDay = {};
+  d.rows.forEach(row => {
+    if (row.mode !== mode || !Number.isFinite(row.pct)) return;
+    (byDay[row.ts.slice(0, 10)] ||= []).push(row.pct);
+  });
+  const daily = Object.entries(byDay)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, values]) => ({ day: new Date(day + 'T12:00:00'), pct: median(values) }));
+  const isolated = daily.filter((sample, i) => {
+    if (i === 0 || i === daily.length - 1) return true;
+    const previous = daily[i - 1].pct;
+    const following = daily[i + 1].pct;
+    return Math.abs(sample.pct - median([previous, following])) <= 15 ||
+      Math.abs(following - previous) > 15;
+  });
+  const confirmed = isolated.slice(0, 3);
+  for (let i=3; i<isolated.length; i++) {
+    const sample = isolated[i];
+    const recent = confirmed.slice(-3).map(s => s.pct);
+    if (Math.abs(sample.pct - median(recent)) <= 15) {
+      confirmed.push(sample);
+      continue;
+    }
+    const next = isolated[i + 1];
+    if (next && Math.abs(next.pct - sample.pct) <= 15) {
+      confirmed.push(sample, next);
+      i++;
+    }
+  }
+  return confirmed;
+}
+
+function theilSen(xs, ys) {
+  const slopes = [];
+  for (let i=0; i<xs.length; i++) {
+    for (let j=i+1; j<xs.length; j++) {
+      if (xs[j] !== xs[i]) slopes.push((ys[j] - ys[i]) / (xs[j] - xs[i]));
+    }
+  }
+  if (!slopes.length) return [0, median(ys)];
+  const slope = median(slopes);
+  return [slope, median(ys.map((y, i) => y - slope * xs[i]))];
+}
+
 function predictClean(d) {
-  const xs = d.labels.map(l => (l - d.labels[0]) / 86400000);
-  const ys = d.restriction; const n = xs.length;
-  if (!n) return { none: true };
-  const mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
-  let num=0, den=0;
-  for (let i=0;i<n;i++){ num+=(xs[i]-mx)*(ys[i]-my); den+=(xs[i]-mx)**2; }
-  const slope = den ? num/den : 0;
-  const now = ys[n-1];
+  const samples = forecastSamples(d);
+  if (samples.length < 4) return { none: true };
+  const xs = samples.map(s => (s.day - samples[0].day) / 86400000);
+  const ys = samples.map(s => s.pct);
+  const [slope, intercept] = theilSen(xs, ys);
+  const now = ys[ys.length - 1];
   if (now >= 100) return { overdue: true };
   if (slope < 1.2) return { none: true };
-  const daysTo = (100 - now) / slope;
+  const fittedNow = slope * xs[xs.length - 1] + intercept;
+  const daysTo = (100 - fittedNow) / slope;
+  if (daysTo <= 0) return { none: true };
   if (daysTo > 45) return { none: true };
   return { target: new Date(+d.now + daysTo*86400000) };
 }
@@ -1330,7 +1387,7 @@ function buildRealData(days) {
     eExtra.push(+extra.toFixed(3));
   });
 
-  return { now, labels, restriction, watts, gpm, expectedWatts, eLabels, eBase, eExtra,
+  return { now, rows, labels, restriction, watts, gpm, expectedWatts, eLabels, eBase, eExtra,
            cleanBaselines, latestRow: rows[rows.length - 1] };
 }
 

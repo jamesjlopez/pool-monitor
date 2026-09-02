@@ -5,7 +5,7 @@ import pytest
 from monitor.api_client import MockPentairClient
 from monitor.engine import Engine
 from monitor.notifier import NtfyNotifier
-from monitor.runner import run_once
+from monitor.runner import _check_trend, run_once
 from monitor.types import AlertLevel, PumpStatus
 
 CALIBRATED_CONFIG = {
@@ -154,3 +154,33 @@ class TestRunOnce:
         assert result.level == AlertLevel.NORMAL
         assert result.pending_elevated
         assert client.turn_off.call_count == 1
+
+
+def test_trend_check_skips_when_pump_is_off(mocker):
+    """An old high-speed session cannot send a forecast while the pump is off."""
+    import monitor.runner as runner
+
+    analyzer = mocker.MagicMock()
+    notifier = mocker.MagicMock()
+    mocker.patch.object(runner.time, "time", return_value=100_000)
+    mocker.patch.object(runner, "_last_trend_check", -100_000)
+
+    _check_trend(analyzer, notifier, CALIBRATED_CONFIG, dry_run=False, active_mode="off")
+
+    analyzer.check.assert_not_called()
+    notifier.send_info.assert_not_called()
+
+
+def test_off_poll_does_not_delay_the_next_valid_trend_check(mocker):
+    import monitor.runner as runner
+
+    analyzer = mocker.MagicMock()
+    analyzer.check.return_value = None
+    notifier = mocker.MagicMock()
+    mocker.patch.object(runner.time, "time", return_value=100_000)
+    mocker.patch.object(runner, "_last_trend_check", -100_000)
+
+    _check_trend(analyzer, notifier, CALIBRATED_CONFIG, dry_run=False, active_mode="off")
+    _check_trend(analyzer, notifier, CALIBRATED_CONFIG, dry_run=False, active_mode="low")
+
+    analyzer.check.assert_called_once_with(CALIBRATED_CONFIG, active_mode="low")
