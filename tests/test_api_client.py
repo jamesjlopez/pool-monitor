@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from monitor.api_client import MockPentairClient, _extract, _fixture_to_status
+from monitor.api_client import MockPentairClient, _extract, _fixture_to_status, _parse_status
 from monitor.types import PumpStatus
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -47,6 +47,19 @@ class TestMockClient:
 
 
 class TestFixtureParsing:
+    def test_cloud_status_preserves_source_telemetry_version(self):
+        status = _parse_status({
+            "timestamp": "device-update",
+            "fields": {
+                "s3": {"value": "1"}, "s14": {"value": "0"},
+                "s17": {"value": "1050", "timestamp": "rpm-update"},
+                "s18": {"value": "148", "timestamp": "watts-update"},
+                "s26": {"value": "303", "timestamp": "flow-update"},
+            },
+        })
+
+        assert status.telemetry_version == "device-update|rpm-update|watts-update|flow-update"
+
     def test_low_clean_speed_mode(self):
         client = MockPentairClient(fixture_path=FIXTURES / "pump_low_clean.json")
         status = client.get_status()

@@ -299,12 +299,24 @@ def _parse_status(device_data: dict) -> PumpStatus:
     else:
         speed_mode = "low" if rpm < 1500 else "high"
 
+    # Device and per-field timestamps are supplied by Pentair.  Keep a stable
+    # composite version so the alert engine can distinguish a new source sample
+    # from a second HTTP response containing the same cloud snapshot.
+    timestamp_parts = [device_data.get("timestamp")]
+    timestamp_parts.extend(
+        fields.get(key, {}).get("timestamp")
+        for key in ("s17", "s18", "s26")
+        if isinstance(fields.get(key), dict)
+    )
+    telemetry_version = "|".join(str(part) for part in timestamp_parts if part is not None)
+
     return PumpStatus(
         rpm=rpm,
         power_watts=power_watts,
         flow_gph=flow_gph,
         is_running=is_running,
         speed_mode=speed_mode if is_running else "off",
+        telemetry_version=telemetry_version or None,
         raw={
             "deviceId": device_data.get("deviceId"),
             "prog_idx": prog_idx,

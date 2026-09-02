@@ -19,6 +19,7 @@ RETENTION_DAYS = 30
 COLUMNS = [
     "timestamp", "rpm", "power_watts", "flow_gph",
     "watts_per_gph", "speed_mode", "alert_level", "baseline_watts_per_gph",
+    "telemetry_quality",
 ]
 
 
@@ -26,9 +27,30 @@ class DataLogger:
     def __init__(self, path: Path):
         self._path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        if not path.exists():
-            with open(path, "w", newline="") as f:
+        try:
+            with open(path, "x", newline="") as f:
                 csv.writer(f).writerow(COLUMNS)
+        except FileExistsError:
+            self._add_telemetry_quality_column()
+
+    def _add_telemetry_quality_column(self) -> None:
+        """Upgrade the existing CSV without losing its historical readings."""
+        try:
+            with open(self._path, newline="") as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if not header or "telemetry_quality" in header:
+                    return
+                if header != COLUMNS[:-1]:
+                    log.warning("metrics CSV has an unexpected header; skipping telemetry-quality migration")
+                    return
+                rows = list(reader)
+        except OSError:
+            return
+        with open(self._path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(COLUMNS)
+            writer.writerows([row + ["legacy"] for row in rows if row])
 
     def log(self, status: PumpStatus, result: EngineResult) -> None:
         if not status.is_running or status.rpm == 0 or status.flow_gph <= 0 or status.power_watts == 0:
@@ -42,6 +64,7 @@ class DataLogger:
             status.speed_mode,
             result.level.name.lower(),
             round(result.baseline_watts_per_gph, 4) if result.baseline_watts_per_gph else "",
+            "fresh" if result.telemetry_fresh else "duplicate",
         ]
         with open(self._path, "a", newline="") as f:
             csv.writer(f).writerow(row)

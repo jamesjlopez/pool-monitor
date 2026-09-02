@@ -15,6 +15,7 @@ Until calibrated, the engine uses conservative flow-drop heuristics only.
 import logging
 import time
 from collections import deque
+from dataclasses import replace
 from typing import Optional
 
 from .profiles import is_high_program_low_speed_profile
@@ -35,6 +36,10 @@ class Engine:
         self._pump_start_time: Optional[float] = None
         self._window: deque[EngineResult] = deque(maxlen=self._window_size)
         self._zero_flow_streak: int = 0
+        # Pentair returns a source timestamp for each device snapshot.  Fast
+        # confirmation polls must not turn one unchanged cloud snapshot into
+        # several independent observations.
+        self._last_telemetry_version: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -50,6 +55,10 @@ class Engine:
         self._window.clear()
         for level in levels[-self._window_size:]:
             self._window.append(EngineResult(level=level, reason="(restored)", speed_mode=""))
+
+    def seed_telemetry_version(self, version: Optional[str]) -> None:
+        """Restore the most recently evaluated cloud snapshot across --once runs."""
+        self._last_telemetry_version = version
 
     def mark_pump_start(self):
         """Call when the pump transitions from off→on to start the grace period."""
@@ -113,6 +122,23 @@ class Engine:
             )
 
         raw_result = self._evaluate(status)
+
+        telemetry_version = status.telemetry_version
+        if telemetry_version is not None:
+            telemetry_version = str(telemetry_version)
+            if telemetry_version == self._last_telemetry_version:
+                pending = raw_result.level > AlertLevel.NORMAL
+                return replace(
+                    raw_result,
+                    level=AlertLevel.NORMAL,
+                    reason=(
+                        "Pentair cloud telemetry timestamp unchanged — "
+                        "awaiting a newer source sample"
+                    ),
+                    pending_elevated=pending,
+                    telemetry_fresh=False,
+                )
+            self._last_telemetry_version = telemetry_version
 
         # Zero-flow while running is serious enough to warn immediately and trigger
         # fast-confirm polling. A second consecutive zero-flow escalates to CRITICAL.

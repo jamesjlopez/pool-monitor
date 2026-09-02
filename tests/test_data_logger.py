@@ -25,6 +25,20 @@ def read_csv(path):
 
 
 class TestDataLogger:
+    def test_migrates_existing_csv_without_telemetry_quality_column(self, tmp_path):
+        path = tmp_path / "metrics.csv"
+        legacy_columns = COLUMNS[:-1]
+        with open(path, "w", newline="") as f:
+            csv.writer(f).writerows([
+                legacy_columns,
+                ["2026-08-28T12:15:00", 1991, 608, 1296, 0.4691, "high", "normal", 0.2038],
+            ])
+
+        DataLogger(path)
+
+        rows = read_csv(path)
+        assert rows[0]["telemetry_quality"] == "legacy"
+
     def test_creates_file_with_header(self, tmp_path):
         path = tmp_path / "metrics.csv"
         DataLogger(path)
@@ -104,6 +118,16 @@ class TestDataLogger:
         logger.log(make_status(), make_result(level=AlertLevel.WARN))
         rows = read_csv(path)
         assert rows[0]["alert_level"] == "warn"
+        assert rows[0]["telemetry_quality"] == "fresh"
+
+    def test_duplicate_cloud_snapshot_is_logged_for_diagnostics(self, tmp_path):
+        path = tmp_path / "metrics.csv"
+        logger = DataLogger(path)
+        logger.log(make_status(), EngineResult(
+            level=AlertLevel.NORMAL, reason="unchanged", telemetry_fresh=False,
+        ))
+
+        assert read_csv(path)[0]["telemetry_quality"] == "duplicate"
 
     def test_critical_level_logged_correctly(self, tmp_path):
         path = tmp_path / "metrics.csv"

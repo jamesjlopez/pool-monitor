@@ -704,6 +704,8 @@ const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue"
 
 // ── State ────────────────────────────────────────────────────
 let allRows           = [];
+let freshRows         = [];
+let cleanBaselines    = {};
 let dashCfg           = defaultDashboardConfig();
 let currentDays       = 7;
 let charts            = {};
@@ -1342,13 +1344,11 @@ function expectedWattsForRow(r, cleanBaselines) {
 function buildRealData(days) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
-  const rows = allRows.filter(r => new Date(r.ts) >= cutoff);
+  const rows = freshRows.filter(r => new Date(r.ts) >= cutoff);
   if (!rows.length) return null;
 
   // Build baselines from ALL loaded history, not just the display window,
   // so we always have clean-filter reference points even for recent dirty periods.
-  const cleanBaselines = computeCleanBaselines(allRows);
-
   const now    = new Date(rows[rows.length - 1].ts);
   const labels = rows.map(r => new Date(r.ts));
   const restriction   = rows.map(r => r.pct);
@@ -1591,9 +1591,12 @@ function parseCSV(text) {
       mode:        o.speed_mode,
       level:       o.alert_level,
       rpm:         +o.rpm,
+      telemetryQuality: o.telemetry_quality || 'legacy',
     };
   }).filter(r => r.ratio !== null);
   annotateRows(allRows);
+  freshRows = allRows.filter(r => r.telemetryQuality !== 'duplicate');
+  cleanBaselines = computeCleanBaselines(freshRows);
 }
 
 // ── Desktop alerts ───────────────────────────────────────────

@@ -31,3 +31,10 @@ def test_cleaning_forecast_is_mode_aware_and_resistant_to_spikes():
     assert "const isolated = daily.filter" in html
     assert "Math.abs(next.pct - sample.pct) <= 15" in html
     assert "return { now, rows, labels" in html
+
+
+def test_duplicate_cloud_snapshots_are_excluded_from_chart_data():
+    html = DASHBOARD.read_text()
+
+    assert "r.telemetryQuality !== 'duplicate'" in html
+    assert "telemetryQuality: o.telemetry_quality || 'legacy'" in html

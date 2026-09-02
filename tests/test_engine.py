@@ -156,6 +156,45 @@ class TestNormalOperation:
 
 
 class TestWarnThreshold:
+    def test_repeated_cloud_snapshot_does_not_confirm_alert(self):
+        """Fast retries need newer source telemetry, not three copies of one sample."""
+        engine = Engine(CALIBRATED_CONFIG)
+        stale_clog = PumpStatus(
+            rpm=1991,
+            power_watts=608,
+            flow_gph=1296,
+            is_running=True,
+            speed_mode="high",
+            telemetry_version="1724866500",
+        )
+
+        results = [engine.process(stale_clog) for _ in range(3)]
+
+        assert [result.level for result in results] == [
+            AlertLevel.NORMAL,
+            AlertLevel.NORMAL,
+            AlertLevel.NORMAL,
+        ]
+        assert results[-1].pending_elevated
+        assert "unchanged" in results[-1].reason
+
+    def test_changed_cloud_snapshot_can_confirm_alert(self):
+        """Distinct source updates still satisfy the normal confirmation window."""
+        engine = Engine(CALIBRATED_CONFIG)
+        results = [
+            engine.process(PumpStatus(
+                rpm=1991,
+                power_watts=608,
+                flow_gph=1296,
+                is_running=True,
+                speed_mode="high",
+                telemetry_version=str(version),
+            ))
+            for version in range(3)
+        ]
+
+        assert results[-1].level == AlertLevel.CRITICAL
+
     def test_warn_fires_after_3_consecutive_readings(self):
         engine = Engine(CALIBRATED_CONFIG)
         # ratio = 110/1050 = 0.1048, baseline = 0.083, deviation = +26%... too low.

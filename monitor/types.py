@@ -23,6 +23,7 @@ class PumpStatus:
     is_running: bool
     timestamp: float = field(default_factory=time.time)
     speed_mode: str = ""   # "low" | "high" | "off" — auto-derived if empty
+    telemetry_version: Optional[str] = None
     raw: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -50,3 +51,4 @@ class EngineResult:
     baseline_watts_per_gph: Optional[float] = None
     consecutive_count: int = 0
     pending_elevated: bool = False  # raw reading was elevated but window not yet full
+    telemetry_fresh: bool = True    # False when Pentair repeated an older source snapshot

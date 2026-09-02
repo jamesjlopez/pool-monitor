@@ -150,6 +150,7 @@ def _load_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
         from .types import AlertLevel
         levels = [AlertLevel[l.upper()] for l in state["window"] if l.upper() in AlertLevel.__members__]
         engine.seed_window(levels)
+    engine.seed_telemetry_version(state.get("last_telemetry_version"))
     if "notifier_last_sent" in state:
         from .types import AlertLevel
         notifier._last_sent = {
@@ -168,6 +169,7 @@ def _save_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
         "critical_streak": _critical_streak,
         "zero_flow_streak": engine._zero_flow_streak,
         "last_trend_check": _last_trend_check,
+        "last_telemetry_version": engine._last_telemetry_version,
     }
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
@@ -181,6 +183,7 @@ def run_once(
     dry_run: bool = False,
     data_logger: Optional[DataLogger] = None,
     recalibrator: Optional[Recalibrator] = None,
+    status: Optional[PumpStatus] = None,
 ) -> Optional[EngineResult]:
     """
     Single poll cycle. Fetch pump status, evaluate it, send alert if needed.
@@ -193,7 +196,7 @@ def run_once(
         config.get("emergency_shutoff", {}).get("consecutive_required", 5)
     )
 
-    status = client.get_status()
+    status = status or client.get_status()
     if status is None:
         msg = "Could not get pump status — API unreachable or auth failure"
         log.warning(msg)
@@ -207,7 +210,7 @@ def run_once(
         data_logger.log(status, result)
 
     # Auto-recalibration: detect clean-filter events and update baseline
-    if recalibrator is not None and result.level == AlertLevel.NORMAL:
+    if recalibrator is not None and result.level == AlertLevel.NORMAL and result.telemetry_fresh:
         event = recalibrator.observe(status, config)
         if event and not dry_run:
             if event.baseline_updated:
@@ -325,6 +328,7 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
             result = run_once(
                 client, engine, notifier, config,
                 dry_run=dry_run, data_logger=data_logger, recalibrator=recalibrator,
+                status=status,
             )
 
             # Fast confirmation: first elevated reading triggers 2 more polls at short

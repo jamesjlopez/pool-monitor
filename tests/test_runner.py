@@ -49,6 +49,34 @@ def make_sequence(*statuses):
 
 
 class TestRunOnce:
+    def test_uses_supplied_status_without_a_second_cloud_request(self, mocker):
+        status = PumpStatus(rpm=1050, power_watts=148, flow_gph=1820, is_running=True)
+        client = mocker.MagicMock()
+        engine = Engine(CALIBRATED_CONFIG)
+        notifier = mocker.MagicMock(spec=NtfyNotifier)
+
+        result = run_once(client, engine, notifier, CALIBRATED_CONFIG, status=status)
+
+        assert result.level == AlertLevel.NORMAL
+        client.get_status.assert_not_called()
+
+    def test_duplicate_cloud_snapshot_does_not_recalibrate(self, mocker):
+        status = PumpStatus(
+            rpm=1050, power_watts=148, flow_gph=1820, is_running=True,
+            telemetry_version="same-cloud-sample",
+        )
+        engine = Engine(CALIBRATED_CONFIG)
+        notifier = mocker.MagicMock(spec=NtfyNotifier)
+        recalibrator = mocker.MagicMock()
+        recalibrator.observe.return_value = None
+        client = make_sequence(status)
+
+        run_once(client, engine, notifier, CALIBRATED_CONFIG, recalibrator=recalibrator)
+        recalibrator.reset_mock()
+        run_once(client, engine, notifier, CALIBRATED_CONFIG, recalibrator=recalibrator)
+
+        recalibrator.observe.assert_not_called()
+
     def test_returns_none_when_client_fails(self, mocker):
         client = MockPentairClient()  # empty → always returns None
         engine = Engine(CALIBRATED_CONFIG)
