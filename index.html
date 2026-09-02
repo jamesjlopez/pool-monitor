@@ -998,18 +998,13 @@ function saveManualCleaning(isoStr) {
   localStorage.setItem(CLEANINGS_KEY, JSON.stringify(list));
 }
 
-function buildCleanings(recalibrations) {
-  const auto = (recalibrations || []).map(r => ({
-    ts:    new Date(r.ts),
-    type:  'auto',
-    label: `Auto-detected: baseline ${r.old_baseline} → ${r.new_baseline} W/GPH (${r.speed_mode} speed)`,
-  }));
+function buildCleanings() {
   const manual = loadManualCleanings().map(c => ({
     ts:    new Date(c.ts),
     type:  'manual',
     label: 'Manually logged',
   }));
-  return [...auto, ...manual].sort((a, b) => +a.ts - +b.ts);
+  return manual;
 }
 
 // ── Threshold lines plugin ───────────────────────────────────
@@ -1535,9 +1530,9 @@ function buildIssues(errors, recalibrations, limit = MAX_ALERTS) {
   const cleanItems = (recalibrations || []).map(r => ({
     ts:   r.ts,
     time: fmtTime(r.ts),
-    sev:  'ok',
-    msg:  'Filter cleaned — baseline re-learned',
-    tech: `${r.speed_mode} speed · old baseline ${r.old_baseline} W/GPH · new baseline ${r.new_baseline} W/GPH`,
+    sev:  'muted',
+    msg:  'Possible filter cleaning — unverified',
+    tech: `${r.speed_mode} speed candidate · baseline ${r.old_baseline} → ${r.new_baseline} W/GPH`,
   }));
   const manualItems = loadManualCleanings().map(c => ({
     ts:   c.ts,
@@ -1632,7 +1627,7 @@ function wireCleaningForm() {
     saveManualCleaning(new Date(val).toISOString());
     form.hidden = true;
     openBtn.style.display = '';
-    allCleanings = buildCleanings(lastRecalibrations);
+    allCleanings = buildCleanings();
     renderActivityLists();
     renderFromData();
   });
@@ -1811,7 +1806,7 @@ async function init() {
   lastNotifications  = notifications;
   lastErrors         = errors;
   lastRecalibrations = recalibrations;
-  allCleanings       = buildCleanings(recalibrations);
+  allCleanings       = buildCleanings();
 
   renderActivityLists();
   maybeSendDesktopAlerts(notifications);

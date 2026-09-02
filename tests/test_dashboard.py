@@ -46,3 +46,17 @@ def test_return_flow_reference_never_compares_legacy_rows_by_mode_alone():
 
     assert "return null;" in html[html.index("function flowKey(r)"):html.index("function computeCleanFlowReferences(rows)")]
     assert "if (!key) return null;" in html[html.index("function flowReferenceForRow"):html.index("function buildRealData(days)")]
+
+
+def test_only_manual_cleanings_create_filter_restriction_chart_markers():
+    """Automatic signals are candidates, not confirmed cleaning events."""
+    html = DASHBOARD.read_text()
+    cleaning_builder = html[
+        html.index("function buildCleanings()"):
+        html.index("// ── Threshold lines plugin")
+    ]
+
+    assert "const auto" not in cleaning_builder
+    assert "type:  'manual'" in cleaning_builder
+    assert "return manual;" in cleaning_builder
+    assert "Possible filter cleaning — unverified" in html
