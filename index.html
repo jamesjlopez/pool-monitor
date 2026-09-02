@@ -1892,10 +1892,12 @@ function maybeSendDesktopAlerts(notifications) {
 // ── Main init ────────────────────────────────────────────────
 async function init() {
   const t = Date.now();
-  dashCfg = await loadDashboardConfig(t);
+  const configPromise = loadDashboardConfig(t);
+  const metricsPromise = fetch(FILES.csv + '?t=' + t);
+  dashCfg = await configPromise;
 
   try {
-    const resp = await fetch(FILES.csv + '?t=' + t);
+    const resp = await metricsPromise;
     if (!resp.ok) throw new Error(resp.status);
     parseCSV(await resp.text());
   } catch {

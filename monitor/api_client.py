@@ -110,17 +110,7 @@ class PentairCloudClient:
         """Activate a pump program by 1-based program number (e.g. 2 = Low speed)."""
         try:
             self._refresh_if_needed()
-            payload = json.dumps({"payload": {f"zp{program_index}e10": "3"}})
-            r = requests.put(
-                _BASE_URL + _DEVICE_CONTROL_PATH + self._device_id,
-                auth=self._aws_auth(),
-                headers=self._headers(),
-                data=payload,
-                timeout=15,
-            )
-            r.raise_for_status()
-            result = r.json()
-            return result.get("data", {}).get("code") == "set_device_success"
+            return self._set_control({f"zp{program_index}e10": "3"})
         except Exception as e:
             log.error("set_speed_program failed: %s", e)
             return False
@@ -135,17 +125,7 @@ class PentairCloudClient:
                 return False
             fields = status_raw.get("fields", {})
             active_idx = int(fields.get("s14", {}).get("value", 0)) + 1
-            payload = json.dumps({"payload": {f"zp{active_idx}e10": "2"}})
-            r = requests.put(
-                _BASE_URL + _DEVICE_CONTROL_PATH + self._device_id,
-                auth=self._aws_auth(),
-                headers=self._headers(),
-                data=payload,
-                timeout=15,
-            )
-            r.raise_for_status()
-            result = r.json()
-            ok = result.get("data", {}).get("code") == "set_device_success"
+            ok = self._set_control({f"zp{active_idx}e10": "2"})
             if ok:
                 log.warning("Pump stopped via API")
             return ok
@@ -160,16 +140,7 @@ class PentairCloudClient:
         """
         try:
             self._refresh_if_needed()
-            payload = json.dumps({"payload": {"d25": "1" if enabled else "0"}})
-            r = requests.put(
-                _BASE_URL + _DEVICE_CONTROL_PATH + self._device_id,
-                auth=self._aws_auth(),
-                headers=self._headers(),
-                data=payload,
-                timeout=15,
-            )
-            r.raise_for_status()
-            ok = r.json().get("data", {}).get("code") == "set_device_success"
+            ok = self._set_control({"d25": "1" if enabled else "0"})
             if ok:
                 log.warning("Pump Status switch set to %s via API", "ON" if enabled else "OFF")
             return ok
@@ -223,6 +194,18 @@ class PentairCloudClient:
             "user-agent": "aws-amplify/4.3.10 react-native",
             "content-type": "application/json; charset=UTF-8",
         }
+
+    def _set_control(self, payload: dict) -> bool:
+        """Apply a control-field update and report Pentair's success code."""
+        response = requests.put(
+            _BASE_URL + _DEVICE_CONTROL_PATH + self._device_id,
+            auth=self._aws_auth(),
+            headers=self._headers(),
+            data=json.dumps({"payload": payload}),
+            timeout=15,
+        )
+        response.raise_for_status()
+        return response.json().get("data", {}).get("code") == "set_device_success"
 
     # ------------------------------------------------------------------
     # Device discovery & status

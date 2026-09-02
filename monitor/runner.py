@@ -71,17 +71,22 @@ MAX_NOTIFICATIONS   = 100
 TREND_CHECK_INTERVAL_HOURS = 12   # check trend at most twice per day
 
 
+def _append_json_record(path: Path, entry: dict, limit: int, *, indent: Optional[int] = None) -> None:
+    """Append one record to a bounded JSON array, recovering from unreadable history."""
+    try:
+        existing = json.loads(path.read_text()) if path.exists() else []
+    except (json.JSONDecodeError, OSError):
+        existing = []
+    existing.append(entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(existing[-limit:], indent=indent))
+
+
 def _record_error(message: str) -> None:
     """Append an error entry to errors.json, keeping the last MAX_ERRORS entries."""
     import datetime as _dt
     entry = {"ts": _dt.datetime.now().isoformat(timespec="seconds"), "message": message}
-    try:
-        existing = json.loads(ERRORS_FILE.read_text()) if ERRORS_FILE.exists() else []
-    except (json.JSONDecodeError, OSError):
-        existing = []
-    existing.append(entry)
-    ERRORS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    ERRORS_FILE.write_text(json.dumps(existing[-MAX_ERRORS:]))
+    _append_json_record(ERRORS_FILE, entry, MAX_ERRORS)
 
 
 def _record_notification(level: "AlertLevel", reason: str, summary: str, sent: bool) -> None:
@@ -94,13 +99,7 @@ def _record_notification(level: "AlertLevel", reason: str, summary: str, sent: b
         "summary": summary,
         "sent": sent,
     }
-    try:
-        existing = json.loads(NOTIFICATIONS_FILE.read_text()) if NOTIFICATIONS_FILE.exists() else []
-    except (json.JSONDecodeError, OSError):
-        existing = []
-    existing.append(entry)
-    NOTIFICATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    NOTIFICATIONS_FILE.write_text(json.dumps(existing[-MAX_NOTIFICATIONS:], indent=2))
+    _append_json_record(NOTIFICATIONS_FILE, entry, MAX_NOTIFICATIONS, indent=2)
 
 
 def load_config(path: Path = DEFAULT_CONFIG) -> dict:
@@ -178,19 +177,22 @@ def _restore_telemetry_checkpoint(engine: "Engine") -> None:
             rows = list(csv.DictReader(f))
     except OSError:
         return
+    version_found = False
+    fresh_checked = False
     for row in reversed(rows):
-        version = row.get("telemetry_version")
-        if version:
-            engine.seed_telemetry_version(version)
+        if not version_found:
+            version = row.get("telemetry_version")
+            if version:
+                engine.seed_telemetry_version(version)
+                version_found = True
+        if not fresh_checked and row.get("telemetry_quality") == "fresh":
+            fresh_checked = True
+            try:
+                _last_fresh_telemetry_at = datetime.fromisoformat(row["timestamp"]).timestamp()
+            except (KeyError, TypeError, ValueError):
+                pass
+        if version_found and fresh_checked:
             break
-    for row in reversed(rows):
-        if row.get("telemetry_quality") != "fresh":
-            continue
-        try:
-            _last_fresh_telemetry_at = datetime.fromisoformat(row["timestamp"]).timestamp()
-        except (KeyError, TypeError, ValueError):
-            pass
-        break
 
 
 def _save_state(engine: "Engine", notifier: "NtfyNotifier") -> None:

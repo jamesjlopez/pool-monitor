@@ -44,8 +44,7 @@ class Engine:
 
     def update_baseline(self, speed_mode: str, new_baseline: float) -> None:
         """Update the in-memory baseline after an auto-recalibration event."""
-        key = "low_speed" if speed_mode == "low" else "high_speed"
-        self._cfg[key]["baseline_watts_per_gph"] = new_baseline
+        self._speed_cfg(speed_mode)["baseline_watts_per_gph"] = new_baseline
 
     def seed_window(self, levels: list) -> None:
         """Pre-populate rolling window from persisted state (for cron --once mode)."""
