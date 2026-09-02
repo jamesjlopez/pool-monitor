@@ -97,6 +97,20 @@ class TestSpeedModeDerivation:
 
 
 class TestNormalOperation:
+    def test_running_status_with_zero_legacy_rpm_is_not_treated_as_off(self):
+        engine = Engine(CALIBRATED_CONFIG)
+        status = PumpStatus(
+            rpm=0,
+            pressure_raw=1050,
+            pressure_psi=10.5,
+            power_watts=148,
+            flow_gph=1820,
+            is_running=True,
+            speed_mode="low",
+        )
+
+        assert engine.process(status).speed_mode == "low"
+
     def test_normal_low_speed_clean_filter(self):
         engine = Engine(CALIBRATED_CONFIG)
         # Normal: ratio = 148/1820 = 0.081 ≈ baseline 0.083 (within 30%)
@@ -136,6 +150,7 @@ class TestNormalOperation:
             flow_gph=3510,
             is_running=True,
             speed_mode="high",
+            motor_speed_pct=70.5,
         )
         result = engine.process(status)
         assert result.level == AlertLevel.NORMAL

@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 RETENTION_DAYS = 30
 COLUMNS = [
-    "timestamp", "rpm", "power_watts", "flow_gph",
+    "timestamp", "pressure_raw", "power_watts", "flow_gph",
     "watts_per_gph", "speed_mode", "alert_level", "baseline_watts_per_gph",
     "telemetry_quality", "active_program", "active_reference", "active_setpoint", "pressure_psi",
     "motor_speed_pct", "telemetry_version",
@@ -25,6 +25,19 @@ COLUMNS = [
 
 
 class DataLogger:
+    @staticmethod
+    def archive_and_start_fresh(path: Path, cutover_date: str) -> Path:
+        """Preserve unattributed history outside the active analytics dataset."""
+        archive = path.with_name(f"metrics-legacy-through-{cutover_date}.csv")
+        if path.exists():
+            if archive.exists():
+                raise FileExistsError(f"Refusing to overwrite existing archive: {archive}")
+            path.replace(archive)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "x", newline="") as f:
+            csv.writer(f).writerow(COLUMNS)
+        return archive
+
     def __init__(self, path: Path):
         self._path = path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,11 +72,11 @@ class DataLogger:
                 writer.writerow([values.get(column, "") for column in COLUMNS])
 
     def log(self, status: PumpStatus, result: EngineResult) -> None:
-        if not status.is_running or status.rpm == 0 or status.flow_gph <= 0 or status.power_watts == 0:
+        if not status.is_running or status.flow_gph <= 0 or status.power_watts == 0:
             return
         row = [
             datetime.now().isoformat(timespec="seconds"),
-            status.rpm,
+            status.pressure_raw if status.pressure_raw is not None else status.rpm,
             round(status.power_watts, 1),
             round(status.flow_gph, 1),
             round(status.watts_per_gph, 4) if status.watts_per_gph else "",

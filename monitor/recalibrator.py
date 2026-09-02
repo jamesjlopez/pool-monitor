@@ -72,7 +72,7 @@ class Recalibrator:
         Observe one pump reading. Returns a RecalibrationEvent if a cleaning is confirmed,
         otherwise None. Mutates config in-place on a baseline update.
         """
-        if not status.is_running or status.rpm == 0 or status.flow_gph <= 0:
+        if not status.is_running or status.flow_gph <= 0:
             return None
 
         ratio = status.watts_per_gph

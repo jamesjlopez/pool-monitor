@@ -244,6 +244,7 @@ def run_once(
         result.level == AlertLevel.CRITICAL
         and _critical_streak >= _shutoff_required
         and config.get("emergency_shutoff", {}).get("enabled", False)
+        and config.get("emergency_shutoff", {}).get("pressure_mapping_verified", False)
         and not dry_run
     ):
         if _trigger_shutoff(client, notifier, config, status):
@@ -374,29 +375,32 @@ def _build_client(config: dict):
 
 
 def _log_result(result: EngineResult, status: PumpStatus):
+    pressure = f"{status.pressure_psi:.2f} PSI" if status.pressure_psi is not None else "unknown PSI"
     if result.level == AlertLevel.NORMAL:
         log.info(
-            "OK [%s] RPM=%d  %.0fW  %.0f GPH  ratio=%.4f — %s",
-            status.speed_mode, status.rpm, status.power_watts,
+            "OK [%s] pressure=%s  %.0fW  %.0f GPH  ratio=%.4f — %s",
+            status.speed_mode, pressure, status.power_watts,
             status.flow_gph, status.watts_per_gph or 0, result.reason,
         )
     elif result.level == AlertLevel.WARN:
         log.warning(
-            "WARN [%s] RPM=%d  %.0fW  %.0f GPH — %s",
-            status.speed_mode, status.rpm, status.power_watts,
+            "WARN [%s] pressure=%s  %.0fW  %.0f GPH — %s",
+            status.speed_mode, pressure, status.power_watts,
             status.flow_gph, result.reason,
         )
     else:
         log.error(
-            "CRITICAL [%s] RPM=%d  %.0fW  %.0f GPH — %s  (streak=%d)",
-            status.speed_mode, status.rpm, status.power_watts,
+            "CRITICAL [%s] pressure=%s  %.0fW  %.0f GPH — %s  (streak=%d)",
+            status.speed_mode, pressure, status.power_watts,
             status.flow_gph, result.reason, _critical_streak,
         )
 
 
 def _status_summary(status: PumpStatus) -> str:
     return (
-        f"RPM: {status.rpm}  |  Power: {status.power_watts:.0f}W  |  "
+        f"Pressure: {status.pressure_psi:.2f} PSI  |  " if status.pressure_psi is not None else "Pressure: unknown  |  "
+    ) + (
+        f"Power: {status.power_watts:.0f}W  |  "
         f"Flow: {status.flow_gph:.0f} GPH  |  Mode: {status.speed_mode}"
     )
 

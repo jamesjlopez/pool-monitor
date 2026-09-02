@@ -48,6 +48,15 @@ def test_return_flow_reference_never_compares_legacy_rows_by_mode_alone():
     assert "if (!key) return null;" in html[html.index("function flowReferenceForRow"):html.index("function buildRealData(days)")]
 
 
+def test_derived_dashboard_metrics_require_verified_program_context():
+    """Legacy raw flow may remain visible, but it must not train derived charts."""
+    html = DASHBOARD.read_text()
+
+    parser = html[html.index("function parseCSV(text)"):html.index("// ── Desktop alerts")]
+    assert "trustedRows = freshRows.filter(hasVerifiedProgramContext);" in parser
+    assert "computeCleanBaselines(trustedRows)" in parser
+
+
 def test_only_manual_cleanings_create_filter_restriction_chart_markers():
     """Automatic signals are candidates, not confirmed cleaning events."""
     html = DASHBOARD.read_text()

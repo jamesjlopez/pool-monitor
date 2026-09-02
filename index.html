@@ -1413,6 +1413,10 @@ function computeCleanBaselines(rows) {
   return result;
 }
 
+function hasVerifiedProgramContext(r) {
+  return Boolean(r.activeProgram && r.activeReference !== '' && r.activeSetpoint !== null);
+}
+
 function expectedWattsForRow(r, cleanBaselines) {
   if (!r.gph || !r.ratio) return null;
   if (r.mode === 'high') return null;  // high-speed ramp: no meaningful baseline, show gap
@@ -1422,7 +1426,7 @@ function expectedWattsForRow(r, cleanBaselines) {
 }
 
 function flowKey(r) {
-  if (r.activeProgram && r.activeReference !== '' && r.activeSetpoint !== null) {
+  if (hasVerifiedProgramContext(r)) {
     return `program:${r.activeProgram}|ref:${r.activeReference}|setpoint:${r.activeSetpoint}`;
   }
   return null;
@@ -1704,7 +1708,7 @@ function parseCSV(text) {
       rowBaseline: o.baseline_watts_per_gph  ? +o.baseline_watts_per_gph  : null,
       mode:        o.speed_mode,
       level:       o.alert_level,
-      rpm:         +o.rpm,
+      pressureRaw: +(o.pressure_raw || o.rpm),
       activeProgram: o.active_program || '',
       activeReference: o.active_reference || '',
       activeSetpoint: o.active_setpoint === '' ? null : +o.active_setpoint,
@@ -1715,8 +1719,9 @@ function parseCSV(text) {
   }).filter(r => r.ratio !== null);
   annotateRows(allRows);
   freshRows = allRows.filter(r => r.telemetryQuality !== 'duplicate');
-  cleanBaselines = computeCleanBaselines(freshRows);
-  cleanFlowReferences = computeCleanFlowReferences(freshRows);
+  const trustedRows = freshRows.filter(hasVerifiedProgramContext);
+  cleanBaselines = computeCleanBaselines(trustedRows);
+  cleanFlowReferences = computeCleanFlowReferences(trustedRows);
 }
 
 // ── Desktop alerts ───────────────────────────────────────────

@@ -55,7 +55,16 @@ class TestDataLogger:
         assert len(rows) == 1
         assert rows[0]["speed_mode"] == "low"
         assert rows[0]["alert_level"] == "normal"
-        assert float(rows[0]["rpm"]) == 1441
+        assert float(rows[0]["pressure_raw"]) == 1441
+
+    def test_archives_legacy_history_and_starts_a_clean_dataset(self, tmp_path):
+        path = tmp_path / "metrics.csv"
+        path.write_text("timestamp,rpm\n2026-08-29T16:45:03,1399\n")
+        archive = DataLogger.archive_and_start_fresh(path, "2026-09-02")
+
+        assert archive.name == "metrics-legacy-through-2026-09-02.csv"
+        assert "2026-08-29T16:45:03" in archive.read_text()
+        assert path.read_text().strip().split(",") == COLUMNS
 
     def test_logs_active_program_context_for_flow_comparisons(self, tmp_path):
         path = tmp_path / "metrics.csv"

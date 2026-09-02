@@ -141,6 +141,31 @@ class TestRunOnce:
         run_once(client, engine, notifier, CALIBRATED_CONFIG)
         client.turn_off.assert_not_called()
 
+    def test_emergency_shutoff_requires_verified_pressure_mapping(self, mocker):
+        config = {
+            **CALIBRATED_CONFIG,
+            "thresholds": {
+                **CALIBRATED_CONFIG["thresholds"],
+                "consecutive_readings_required": 1,
+            },
+            "emergency_shutoff": {
+                "enabled": True,
+                "consecutive_required": 1,
+                "delay_seconds": 0,
+            },
+        }
+        extreme = PumpStatus(rpm=1050, power_watts=300, flow_gph=200, is_running=True)
+        client = make_sequence(extreme)
+        client.turn_off = mocker.MagicMock(return_value=True)
+        notifier = mocker.MagicMock(spec=NtfyNotifier)
+        notifier.send_alert.return_value = True
+        mocker.patch("monitor.runner.time.sleep")
+
+        result = run_once(client, Engine(config), notifier, config)
+
+        assert result.level == AlertLevel.CRITICAL
+        client.turn_off.assert_not_called()
+
     def test_successful_shutoff_requires_fresh_confirmation_after_restart(self, mocker, tmp_path):
         import monitor.runner as runner
 
@@ -153,6 +178,7 @@ class TestRunOnce:
             },
             "emergency_shutoff": {
                 "enabled": True,
+                "pressure_mapping_verified": True,
                 "consecutive_required": 1,
                 "delay_seconds": 0,
             },

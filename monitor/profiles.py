@@ -5,7 +5,7 @@ from __future__ import annotations
 from .types import PumpStatus
 
 
-HIGH_SPEED_MIN_RPM = 1500
+HIGH_SPEED_MIN_MOTOR_PCT = 75.0
 MIN_NORMAL_LOAD_WATTS = 150
 HIGH_FLOW_GPH = 3000
 LOW_LOAD_RATIO = 0.05
@@ -16,7 +16,8 @@ def is_high_program_low_speed_profile(status: PumpStatus) -> bool:
     return (
         status.is_running
         and status.speed_mode == "high"
-        and status.rpm < HIGH_SPEED_MIN_RPM
+        and status.motor_speed_pct is not None
+        and status.motor_speed_pct < HIGH_SPEED_MIN_MOTOR_PCT
         and status.power_watts < MIN_NORMAL_LOAD_WATTS
     )
 

@@ -13,17 +13,16 @@ thresholds:
   startup_grace_seconds: 120          # suppress alerts for 2 min after pump starts
   consecutive_readings_required: 3    # require N readings in a row before alerting
 
-  # Dual-signal monitoring: direct pressure (s17, hundredths of PSI) OR flow loss
-  # from a known-clean fixed-speed program can send a warning. Only direct pressure
-  # may escalate to CRITICAL / emergency shutoff.
+  # Pressure notifications are active. Flow-loss alerts remain disabled until a
+  # manually confirmed clean reading is recorded for each active program.
 
   low_speed:
     # Low speed program runs at 70.5% motor speed.
     alert_psi: 12
     emergency_psi: 18
-    baseline_flow_gph: 3510        # provisional clean reference (58.5 GPM, 2026-08-17)
-    flow_alert_drop_pct: 35        # WARN if sustained flow is ≥35% below clean reference
-    baseline_watts_per_gph: 0.2027    # auto-recalibrated 2026-08-29 08:45
+    baseline_flow_gph: null        # awaiting a manually confirmed, attributable clean reading
+    flow_alert_drop_pct: null       # disabled pending clean-flow calibration
+    baseline_watts_per_gph: null    # legacy ratio calibration is not trusted
     alert_ratio_pct: 100              # WARN if ratio >100% above clean baseline
     emergency_ratio_pct: 300          # CRITICAL if ratio >300% above clean baseline
 
@@ -31,9 +30,9 @@ thresholds:
     # High speed program uses its own clean-flow reference.
     alert_psi: 20
     emergency_psi: 30
-    baseline_flow_gph: 3804        # provisional clean reference (63.4 GPM)
-    flow_alert_drop_pct: 35        # WARN if sustained flow is ≥35% below clean reference
-    baseline_watts_per_gph: 0.2038    # auto-recalibrated 2026-08-17 12:15
+    baseline_flow_gph: null        # awaiting a manually confirmed, attributable clean reading
+    flow_alert_drop_pct: null       # disabled pending clean-flow calibration
+    baseline_watts_per_gph: null    # legacy ratio calibration is not trusted
     alert_ratio_pct: 100              # WARN if ratio >100% above clean baseline
     emergency_ratio_pct: 300
 
@@ -46,7 +45,8 @@ ntfy:
   priority_emergency: "urgent"       # iOS critical alert (bypasses silent mode)
 
 emergency_shutoff:
-  enabled: true                      # shuts off pump after 3 fast-confirmed CRITICAL readings
+  enabled: false                     # re-enable only after a raw Pentair field capture confirms pressure mapping
+  pressure_mapping_verified: false   # defense in depth: enabled alone cannot stop the pump
   consecutive_required: 1            # 1 confirmed CRITICAL output = shutoff (window itself requires 3 readings)
   delay_seconds: 30
 

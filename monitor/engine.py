@@ -70,33 +70,29 @@ class Engine:
 
     def process(self, status: PumpStatus) -> EngineResult:
         """Evaluate one reading and return the effective alert level."""
-        if not status.is_running or status.rpm == 0:
+        if not status.is_running:
             self._zero_flow_streak = 0
-            if status.is_running and status.rpm == 0:
-                return EngineResult(
-                    level=AlertLevel.NORMAL,
-                    reason=self._zero_telemetry_reason(status),
-                    speed_mode="off",
-                    pending_elevated=True,
-                )
-            # Contradictory reading: API says not running / RPM=0 but reports non-zero
-            # watts or flow — likely a transitional API glitch. Re-poll to get a valid read.
-            if status.rpm == 0 and (status.power_watts > 0 or status.flow_gph > 0):
-                return EngineResult(
-                    level=AlertLevel.NORMAL,
-                    reason="Contradictory reading (RPM=0 but watts/flow non-zero) — awaiting valid read",
-                    speed_mode="off",
-                    pending_elevated=True,
-                )
             return EngineResult(level=AlertLevel.NORMAL, reason="Pump not running",
                                 speed_mode="off")
 
-        # Bogus reading: API returns stale RPM after pump stops while watts drops to 0.
-        # Treat as not running — do not evaluate or alert.
-        if status.power_watts == 0 and status.rpm > 0:
+        # The cloud can briefly report a running program with no workload.
+        # Await a fresh source sample instead of treating pressure as RPM.
+        if status.power_watts == 0:
             self._zero_flow_streak = 0
-            return EngineResult(level=AlertLevel.NORMAL, reason="Pump not running",
-                                speed_mode="off")
+            return EngineResult(
+                level=AlertLevel.NORMAL,
+                reason=self._zero_telemetry_reason(status),
+                speed_mode=status.speed_mode,
+                pending_elevated=True,
+            )
+
+        if status.speed_mode not in ("low", "high"):
+            return EngineResult(
+                level=AlertLevel.NORMAL,
+                reason="Active pump program is unknown — awaiting attributable telemetry",
+                speed_mode="unknown",
+                pending_elevated=True,
+            )
 
         if self._in_grace_period():
             elapsed = time.time() - self._pump_start_time

@@ -77,6 +77,18 @@ class TestFixtureParsing:
         assert status.pressure_psi == 10.5
         assert status.motor_speed_pct == 70.5
 
+    def test_cloud_status_without_a_program_never_infers_mode_from_pressure(self):
+        status = _parse_status({
+            "fields": {
+                "s3": {"value": "1"}, "s14": {"value": "0"},
+                "s17": {"value": "1050"}, "s18": {"value": "148"},
+                "s26": {"value": "303"},
+            },
+        })
+
+        assert status.pressure_raw == 1050
+        assert status.speed_mode == "unknown"
+
     def test_low_clean_speed_mode(self):
         client = MockPentairClient(fixture_path=FIXTURES / "pump_low_clean.json")
         status = client.get_status()

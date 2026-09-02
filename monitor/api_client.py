@@ -283,11 +283,9 @@ def _parse_status(device_data: dict) -> PumpStatus:
             return float(default)
 
     is_running  = int(fval("s3", 0)) == 1
-    pressure_raw = fval("s17", 0.0)
+    pressure_raw = int(fval("s17", 0.0))
     # s17 is labeled "Current Pressure" by the device and is expressed in
-    # hundredths of PSI (for example, 1950 = 19.50 PSI). Keep its raw value in
-    # the legacy rpm field until the historical CSV schema can be retired.
-    rpm         = int(pressure_raw)
+    # hundredths of PSI (for example, 1950 = 19.50 PSI).
     pressure_psi = pressure_raw / 100 if pressure_raw > 0 else None
     motor_speed_pct = fval("s19", 0.0) / 10 if "s19" in fields else None
     power_watts = fval("s18", 0.0)
@@ -304,7 +302,9 @@ def _parse_status(device_data: dict) -> PumpStatus:
     elif "high" in prog_name:
         speed_mode = "high"
     else:
-        speed_mode = "low" if rpm < 1500 else "high"
+        # s17 is pressure, not RPM. Without the named active program, this
+        # sample cannot be attributed to a calibration or safety threshold.
+        speed_mode = "unknown"
 
     # Device and per-field timestamps are supplied by Pentair.  Keep a stable
     # composite version so the alert engine can distinguish a new source sample
@@ -318,11 +318,14 @@ def _parse_status(device_data: dict) -> PumpStatus:
     telemetry_version = "|".join(str(part) for part in timestamp_parts if part is not None)
 
     return PumpStatus(
-        rpm=rpm,
+        # Kept for compatibility with synthetic test fixtures. Live Pentair
+        # telemetry deliberately does not populate this legacy field.
+        rpm=0,
         power_watts=power_watts,
         flow_gph=flow_gph,
         is_running=is_running,
         pressure_psi=pressure_psi,
+        pressure_raw=pressure_raw,
         motor_speed_pct=motor_speed_pct,
         speed_mode=speed_mode if is_running else "off",
         telemetry_version=telemetry_version or None,
