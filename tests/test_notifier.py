@@ -72,6 +72,15 @@ class TestSendAlert:
         result = n.send_alert(AlertLevel.WARN, "Filter dirty", "status")
         assert result is False
 
+    def test_stale_telemetry_alert_says_readings_are_outdated(self, mocker):
+        mock_resp = mocker.MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_post = mocker.patch("monitor.notifier.requests.post", return_value=mock_resp)
+
+        NtfyNotifier(BASE_CONFIG).send_telemetry_stale(90)
+
+        assert "Pressure and flow readings are outdated." in mock_post.call_args.kwargs["data"].decode()
+
 
 class TestCooldown:
     def test_warn_suppressed_within_cooldown(self, mocker):

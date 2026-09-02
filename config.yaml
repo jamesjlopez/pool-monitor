@@ -9,6 +9,10 @@ pentair:
 pump:
   poll_interval_seconds: 1800
 
+telemetry_health:
+  stale_retry_delays_seconds: [120, 300, 600]  # retry at 2, 5, and 10 minutes after a stale poll
+  stale_alert_after_seconds: 5400              # 90 minutes without a new Pentair source sample
+
 thresholds:
   startup_grace_seconds: 120          # suppress alerts for 2 min after pump starts
   consecutive_readings_required: 3    # require N readings in a row before alerting

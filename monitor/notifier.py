@@ -55,6 +55,19 @@ class NtfyNotifier:
         """Send a low-priority informational notification (recalibration, trend warnings)."""
         return self._post(title, f"{message}\n\n{DASHBOARD_URL}", "low", ["information_source"])
 
+    def send_telemetry_stale(self, stale_minutes: int) -> bool:
+        """Warn when Pentair has stopped providing a current pump measurement."""
+        return self._post(
+            "Pool Telemetry Alert",
+            (
+                f"Pentair telemetry has not updated for {stale_minutes} minutes. "
+                "Pressure and flow readings are outdated.\n\n"
+                f"{DASHBOARD_URL}"
+            ),
+            self._priority_alert,
+            ["warning"],
+        )
+
     def send_test(self) -> bool:
         """Send a test notification to confirm ntfy is working."""
         return self._post(

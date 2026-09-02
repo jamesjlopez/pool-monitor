@@ -14,12 +14,14 @@ with injected dependencies (no real pump or ntfy required).
 """
 
 import argparse
+import csv
 import json
 import logging
 import logging.handlers
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -137,11 +139,13 @@ FAST_CONFIRM_INTERVAL = 120  # seconds between confirmation polls
 _critical_streak = 0
 _shutoff_required = 1       # overridden by config at runtime
 _last_trend_check: float = 0.0  # epoch seconds of last trend analysis
+_last_fresh_telemetry_at: Optional[float] = None
+_telemetry_stale_alert_sent = False
 
 
 def _load_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
     """Restore rolling window and cooldown timers from disk (survives cron restarts)."""
-    global _critical_streak, _last_trend_check
+    global _critical_streak, _last_trend_check, _last_fresh_telemetry_at, _telemetry_stale_alert_sent
     try:
         state = json.loads(STATE_FILE.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
@@ -159,6 +163,34 @@ def _load_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
     _critical_streak = state.get("critical_streak", 0)
     engine._zero_flow_streak = state.get("zero_flow_streak", 0)
     _last_trend_check = state.get("last_trend_check", 0.0)
+    _last_fresh_telemetry_at = state.get("last_fresh_telemetry_at")
+    _telemetry_stale_alert_sent = state.get("telemetry_stale_alert_sent", False)
+    if _last_fresh_telemetry_at is None:
+        _restore_telemetry_checkpoint(engine)
+
+
+def _restore_telemetry_checkpoint(engine: "Engine") -> None:
+    """Migrate existing live history into the freshness checkpoint on upgrade."""
+    global _last_fresh_telemetry_at
+
+    try:
+        with open(PROJECT_ROOT / "logs" / "metrics.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+    except OSError:
+        return
+    for row in reversed(rows):
+        version = row.get("telemetry_version")
+        if version:
+            engine.seed_telemetry_version(version)
+            break
+    for row in reversed(rows):
+        if row.get("telemetry_quality") != "fresh":
+            continue
+        try:
+            _last_fresh_telemetry_at = datetime.fromisoformat(row["timestamp"]).timestamp()
+        except (KeyError, TypeError, ValueError):
+            pass
+        break
 
 
 def _save_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
@@ -170,6 +202,8 @@ def _save_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
         "zero_flow_streak": engine._zero_flow_streak,
         "last_trend_check": _last_trend_check,
         "last_telemetry_version": engine._last_telemetry_version,
+        "last_fresh_telemetry_at": _last_fresh_telemetry_at,
+        "telemetry_stale_alert_sent": _telemetry_stale_alert_sent,
     }
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state))
@@ -206,6 +240,7 @@ def run_once(
 
     result = engine.process(status)
     _log_result(result, status)
+    _track_telemetry_freshness(result, notifier, config, dry_run)
     if data_logger is not None:
         data_logger.log(status, result)
 
@@ -253,6 +288,59 @@ def run_once(
             _critical_streak = 0
             engine.reset_alert_history()
 
+    return result
+
+
+def _track_telemetry_freshness(
+    result: EngineResult, notifier: "NtfyNotifier", config: dict, dry_run: bool
+) -> None:
+    """Record the latest source update and alert once when it remains stale."""
+    global _last_fresh_telemetry_at, _telemetry_stale_alert_sent
+
+    now = time.time()
+    if result.telemetry_fresh:
+        _last_fresh_telemetry_at = now
+        _telemetry_stale_alert_sent = False
+        return
+
+    if _last_fresh_telemetry_at is None:
+        _last_fresh_telemetry_at = now
+        return
+
+    stale_seconds = now - _last_fresh_telemetry_at
+    threshold = config.get("telemetry_health", {}).get("stale_alert_after_seconds", 5400)
+    if stale_seconds < threshold or _telemetry_stale_alert_sent:
+        return
+
+    stale_minutes = round(stale_seconds / 60)
+    reason = (
+        f"Pentair telemetry has not updated for {stale_minutes} minutes. "
+        "Pressure and flow readings are outdated."
+    )
+    if dry_run:
+        log.info("[DRY RUN] Would send telemetry alert: %s", reason)
+        return
+    sent = notifier.send_telemetry_stale(stale_minutes)
+    _record_notification(AlertLevel.WARN, reason, "Telemetry health alert", sent)
+    _telemetry_stale_alert_sent = sent
+
+
+def _retry_stale_telemetry(client, engine: Engine, notifier: "NtfyNotifier", config: dict,
+                           result: Optional[EngineResult], dry_run: bool = False,
+                           data_logger: Optional[DataLogger] = None,
+                           recalibrator: Optional[Recalibrator] = None) -> Optional[EngineResult]:
+    """Retry stale cloud telemetry with bounded backoff until a fresh sample arrives."""
+    if result is None or result.telemetry_fresh:
+        return result
+    for delay in config.get("telemetry_health", {}).get("stale_retry_delays_seconds", [120, 300, 600]):
+        log.info("Cloud telemetry unchanged — retrying in %ds", delay)
+        time.sleep(delay)
+        result = run_once(
+            client, engine, notifier, config, dry_run=dry_run,
+            data_logger=data_logger, recalibrator=recalibrator,
+        )
+        if result is None or result.telemetry_fresh:
+            return result
     return result
 
 
@@ -305,6 +393,8 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
     trend_analyzer = TrendAnalyzer(metrics_path)
     data_logger = None if dry_run else DataLogger(metrics_path)
     interval = config["pump"].get("poll_interval_seconds", 1800)
+    if not dry_run:
+        _load_state(engine, notifier)
 
     log.info("Pool monitor started — polling every %ds, aligned to clock slots", interval)
     prev_running = None
@@ -327,7 +417,7 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
 
             # Fast confirmation: first elevated reading triggers 2 more polls at short
             # intervals to confirm before the next normal poll — catches transients.
-            if result and result.pending_elevated:
+            if result and result.pending_elevated and result.telemetry_fresh:
                 log.info(
                     "Elevated reading — confirming with 2 more polls at %ds intervals",
                     FAST_CONFIRM_INTERVAL,
@@ -341,10 +431,17 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
                     if result is None or not result.pending_elevated:
                         break
 
+            result = _retry_stale_telemetry(
+                client, engine, notifier, config, result, dry_run,
+                data_logger=data_logger, recalibrator=recalibrator,
+            )
+
             _check_trend(
                 trend_analyzer, notifier, config, dry_run,
                 active_mode=result.speed_mode if result else None,
             )
+            if not dry_run:
+                _save_state(engine, notifier)
 
         except KeyboardInterrupt:
             log.info("Shutting down — goodbye")

@@ -5,8 +5,8 @@ import pytest
 from monitor.api_client import MockPentairClient
 from monitor.engine import Engine
 from monitor.notifier import NtfyNotifier
-from monitor.runner import _check_trend, run_once
-from monitor.types import AlertLevel, PumpStatus
+from monitor.runner import _check_trend, _restore_telemetry_checkpoint, _retry_stale_telemetry, run_once
+from monitor.types import AlertLevel, EngineResult, PumpStatus
 
 CALIBRATED_CONFIG = {
     "pump": {"host": "", "poll_interval_seconds": 60},
@@ -41,6 +41,10 @@ CALIBRATED_CONFIG = {
         "delay_seconds": 30,
     },
     "logging": {"level": "DEBUG"},
+    "telemetry_health": {
+        "stale_alert_after_seconds": 5400,
+        "stale_retry_delays_seconds": [120, 300, 600],
+    },
 }
 
 
@@ -76,6 +80,27 @@ class TestRunOnce:
         run_once(client, engine, notifier, CALIBRATED_CONFIG, recalibrator=recalibrator)
 
         recalibrator.observe.assert_not_called()
+
+    def test_stale_telemetry_alerts_after_ninety_minutes(self, mocker):
+        """A repeated cloud snapshot makes pressure and flow readings outdated."""
+        import monitor.runner as runner
+
+        status = PumpStatus(
+            rpm=1050, power_watts=148, flow_gph=1820, is_running=True,
+            telemetry_version="same-cloud-sample",
+        )
+        notifier = mocker.MagicMock(spec=NtfyNotifier)
+        mocker.patch.object(runner, "_record_notification")
+        mocker.patch.object(runner.time, "time", side_effect=[0, 5400])
+        runner._last_fresh_telemetry_at = None
+        runner._telemetry_stale_alert_sent = False
+        engine = Engine(CALIBRATED_CONFIG)
+
+        run_once(make_sequence(status), engine, notifier, CALIBRATED_CONFIG)
+        run_once(make_sequence(status), engine, notifier, CALIBRATED_CONFIG)
+
+        notifier.send_telemetry_stale.assert_called_once_with(90)
+
 
     def test_returns_none_when_client_fails(self, mocker):
         client = MockPentairClient()  # empty → always returns None
@@ -208,6 +233,41 @@ class TestRunOnce:
         assert result.level == AlertLevel.NORMAL
         assert result.pending_elevated
         assert client.turn_off.call_count == 1
+
+
+def test_stale_telemetry_retries_with_backoff_until_a_fresh_sample(mocker):
+    stale = EngineResult(AlertLevel.NORMAL, "unchanged", telemetry_fresh=False)
+    fresh = EngineResult(AlertLevel.NORMAL, "fresh", telemetry_fresh=True)
+    client = mocker.MagicMock()
+    engine = mocker.MagicMock()
+    notifier = mocker.MagicMock()
+    mocker.patch("monitor.runner.run_once", side_effect=[fresh])
+    sleep = mocker.patch("monitor.runner.time.sleep")
+
+    result = _retry_stale_telemetry(client, engine, notifier, CALIBRATED_CONFIG, stale)
+
+    assert result is fresh
+    sleep.assert_called_once_with(120)
+
+
+def test_upgrade_restores_last_fresh_telemetry_from_existing_metrics(mocker, tmp_path):
+    import monitor.runner as runner
+
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "metrics.csv").write_text(
+        "timestamp,telemetry_quality,telemetry_version\n"
+        "2026-09-02T11:15:00,fresh,source-1115\n"
+        "2026-09-02T11:45:00,duplicate,source-1115\n"
+    )
+    mocker.patch.object(runner, "PROJECT_ROOT", tmp_path)
+    runner._last_fresh_telemetry_at = None
+    engine = Engine(CALIBRATED_CONFIG)
+
+    _restore_telemetry_checkpoint(engine)
+
+    assert engine._last_telemetry_version == "source-1115"
+    assert runner._last_fresh_telemetry_at == 1788365700.0
 
 
 def test_trend_check_skips_when_pump_is_off(mocker):
