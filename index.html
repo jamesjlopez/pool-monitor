@@ -553,9 +553,9 @@ body {
       <div class="tech-note" id="info-flow">
         <div class="tech-note-inner">
           <b>Clean-flow reference</b> — the 90th-percentile flow seen for the same active
-          program, reference type, and setpoint. Older readings without that context are grouped
-          by speed mode. This is diagnostic: a falling line shows lost return flow even if the
-          watts/GPH alert baseline has become stale.
+          program, reference type, and setpoint. Low- and high-speed sessions therefore have
+          separate clean references. This is diagnostic: a falling line shows lost return flow
+          even if the watts/GPH alert baseline has become stale.
         </div>
       </div>
       <div class="chart-wrap med"><canvas id="chart-flow"></canvas></div>
@@ -566,7 +566,36 @@ body {
       </div>
     </section>
 
-    <!-- Filter restriction (primary) -->
+    <!-- Filter pressure (direct gauge signal) -->
+    <section class="widget span-2">
+      <div class="widget-head">
+        <div class="widget-titles">
+          <div class="widget-title">Filter pressure
+            <button class="info-btn" type="button" aria-expanded="false" data-info="info-pressure" aria-label="What is this?">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <div class="widget-eyebrow">Direct PSI reported by the pump — compare it with the filter-canister gauge</div>
+        </div>
+        <div class="legend" id="legend-pressure"></div>
+      </div>
+      <div class="tech-note" id="info-pressure">
+        <div class="tech-note-inner">
+          <b>Direct pressure reading</b> — this is the pump's reported PSI, not a value inferred from
+          power or flow. The dashed clean reference is the lowest typical PSI for the same active
+          program, reference type, and setpoint, so low- and high-speed sessions are compared separately.
+          Use it alongside the analog gauge on the filter canister to validate how closely the two readings track.
+        </div>
+      </div>
+      <div class="chart-wrap med"><canvas id="chart-pressure"></canvas></div>
+      <div class="statline">
+        <div class="stat"><div class="k">Pressure now</div><div class="v" id="st-pressure-now">—</div></div>
+        <div class="stat"><div class="k">Clean reference</div><div class="v" id="st-pressure-ref">—</div></div>
+        <div class="stat"><div class="k">Pressure rise</div><div class="v" id="st-pressure-rise">—</div></div>
+      </div>
+    </section>
+
+    <!-- Filter restriction (derived proxy) -->
     <section class="widget span-2">
       <div class="widget-head">
         <div class="widget-titles">
@@ -736,6 +765,7 @@ let allRows           = [];
 let freshRows         = [];
 let cleanBaselines    = {};
 let cleanFlowReferences = {};
+let cleanPressureReferences = {};
 let dashCfg           = defaultDashboardConfig();
 let currentDays       = 7;
 let charts            = {};
@@ -1152,11 +1182,64 @@ function renderCharts(d) {
         }),
       },
     },
-    plugins: [crosshair],
+    plugins: [cleaningMarkersPlugin(allCleanings), crosshair],
   });
   legend('legend-flow', [
     { label: 'Measured flow', color: C.cyan },
     { label: 'Clean reference', color: C.green, dash: true },
+  ]);
+
+  // Filter pressure has a clean PSI reference for each verified operating
+  // session, so the high-speed program never distorts the low-speed baseline.
+  const pressureValues = d.pressurePsi.filter(v => Number.isFinite(v));
+  const pressureReferenceValues = d.pressureReference.filter(v => Number.isFinite(v));
+  const minPressure = pressureValues.length ? Math.min(...pressureValues, ...pressureReferenceValues) : 0;
+  const maxPressure = pressureValues.length ? Math.max(...pressureValues, ...pressureReferenceValues) : 10;
+  const pressurePadding = Math.max((maxPressure - minPressure) * 0.15, 0.5);
+  charts.pressure = new Chart(document.getElementById('chart-pressure'), {
+    type: 'line',
+    data: { labels: d.labels, datasets: [
+      {
+        label: 'Filter pressure', data: d.pressurePsi,
+        borderColor: C.purple, borderWidth: 2, tension: 0.35,
+        pointRadius: 0, pointHoverRadius: 4,
+        pointHoverBackgroundColor: C.purple, pointHoverBorderColor: '#030a15', pointHoverBorderWidth: 2,
+        fill: true,
+        backgroundColor: ctx => gradient(ctx.chart.ctx, ctx.chart.chartArea, C.purple, 0.25, 0.0),
+      },
+      {
+        label: 'Clean PSI reference', data: d.pressureReference,
+        borderColor: C.green, borderWidth: 1.5, borderDash: [6, 5], pointRadius: 0, tension: 0,
+      },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...TOOLTIP_BASE, callbacks: {
+          title: items => fmtTime(d.labels[items[0].dataIndex]),
+          label: c => c.parsed.y == null ? null : `  ${c.dataset.label}: ${c.parsed.y.toFixed(2)} PSI`,
+          afterBody: items => {
+            const rise = d.pressureRise[items[0].dataIndex];
+            return rise == null ? [] : [`  Pressure rise: ${rise >= 0 ? '+' : ''}${rise.toFixed(0)}%`];
+          },
+        }},
+      },
+      scales: {
+        x: { ...BASE_X, ticks: { ...BASE_X.ticks, callback: v => fmtDay(d.labels[v]) } },
+        y: yAxis({
+          suggestedMin: Math.max(0, minPressure - pressurePadding),
+          suggestedMax: maxPressure + pressurePadding,
+          ticks: { color: C.text3, padding: 10, maxTicksLimit: 6, callback: v => v + ' PSI' },
+        }),
+      },
+    },
+    plugins: [cleaningMarkersPlugin(allCleanings), crosshair],
+  });
+  legend('legend-pressure', [
+    { label: 'Pump-reported PSI', color: C.purple },
+    { label: 'Clean PSI reference', color: C.green, dash: true },
   ]);
 
   // Pump workload: extra watts (actual − expected per-band baseline)
@@ -1285,6 +1368,15 @@ function setHeroFromData(d) {
     ? (flowRef / 60).toFixed(1) + '<small>GPM</small>' : '—';
   document.getElementById('st-flow-loss').innerHTML = flowLoss !== null
     ? (flowLoss >= 0 ? '−' : '+') + Math.abs(flowLoss).toFixed(0) + '<small>%</small>' : '—';
+  const latestPressure = d.pressurePsi.at(-1);
+  const pressureRef = d.pressureReference.at(-1);
+  const pressureRise = d.pressureRise.at(-1);
+  document.getElementById('st-pressure-now').innerHTML = Number.isFinite(latestPressure)
+    ? latestPressure.toFixed(2) + '<small> PSI</small>' : '—';
+  document.getElementById('st-pressure-ref').innerHTML = Number.isFinite(pressureRef)
+    ? pressureRef.toFixed(2) + '<small> PSI</small>' : '—';
+  document.getElementById('st-pressure-rise').innerHTML = Number.isFinite(pressureRise)
+    ? (pressureRise >= 0 ? '+' : '') + pressureRise.toFixed(0) + '<small>%</small>' : '—';
   const extraEl = document.getElementById('st-extra-watts');
   if (extraW !== null) {
     extraEl.innerHTML = (extraW > 0 ? '+' : '') + extraW + '<small>W</small>';
@@ -1432,35 +1524,48 @@ function flowKey(r) {
   return null;
 }
 
-function computeCleanFlowReferences(rows) {
+function computeCleanSessionReferences(rows, valueForRow, percentile) {
   const groups = {};
   rows.forEach(r => {
-    if (!r.gph) return;
+    const value = valueForRow(r);
+    if (!Number.isFinite(value)) return;
     const key = flowKey(r);
     if (!key) return;
-    (groups[key] ||= []).push(r.gph);
+    (groups[key] ||= []).push(value);
   });
   const references = {};
-  Object.entries(groups).forEach(([key, flows]) => {
-    if (flows.length < 5) return;
-    flows.sort((a, b) => a - b);
-    references[key] = flows[Math.floor((flows.length - 1) * 0.90)];
+  Object.entries(groups).forEach(([key, values]) => {
+    if (values.length < 5) return;
+    values.sort((a, b) => a - b);
+    references[key] = values[Math.floor((values.length - 1) * percentile)];
   });
   return references;
 }
 
-function flowReferenceForRow(r, references) {
+function computeCleanFlowReferences(rows) {
+  return computeCleanSessionReferences(rows, r => r.gph || null, 0.90);
+}
+
+function sessionReferenceForRow(r, references) {
   const key = flowKey(r);
   if (!key) return null;
   return references[key] ?? null;
 }
 
+function computeCleanPressureReferences(rows) {
+  return computeCleanSessionReferences(rows, r => r.pressurePsi, 0.10);
+}
+
 function buildRealData(days) {
-  const now = new Date(freshRows[freshRows.length - 1].ts);
+  const now = new Date(allRows[allRows.length - 1].ts);
   if (isNaN(now)) return null;
   const cutoff = new Date(now);
   cutoff.setDate(cutoff.getDate() - days);
-  const rows = freshRows.filter(r => new Date(r.ts) >= cutoff);
+  // Show every completed poll, including unchanged cloud snapshots.  The
+  // fresh-only subset below remains the source for calculations that would be
+  // biased by counting an unchanged snapshot as another interval of runtime.
+  const rows = allRows.filter(r => new Date(r.ts) >= cutoff);
+  const calculationRows = freshRows.filter(r => new Date(r.ts) >= cutoff);
   if (!rows.length) return null;
 
   // Build baselines from ALL loaded history, not just the display window,
@@ -1471,12 +1576,18 @@ function buildRealData(days) {
   const gpm           = rows.map(r => r.gpm !== null ? +r.gpm.toFixed(1) : null);
   const expectedWatts = rows.map(r => expectedWattsForRow(r, cleanBaselines));
   const flow = rows.map(r => r.gph || null);
-  const flowReference = rows.map(r => flowReferenceForRow(r, cleanFlowReferences));
+  const pressurePsi = rows.map(r => r.pressurePsi);
+  const flowReference = rows.map(r => sessionReferenceForRow(r, cleanFlowReferences));
   const flowLoss = flow.map((value, i) => flowReference[i] ? (1 - value / flowReference[i]) * 100 : null);
+  const pressureReference = rows.map(r => sessionReferenceForRow(r, cleanPressureReferences));
+  const pressureRise = pressurePsi.map((value, i) => (
+    Number.isFinite(value) && Number.isFinite(pressureReference[i])
+      ? (value / pressureReference[i] - 1) * 100 : null
+  ));
 
   // Daily energy cost
   const byDay = {};
-  rows.forEach(r => {
+  calculationRows.forEach(r => {
     const day = r.ts.slice(0, 10);
     if (!byDay[day]) byDay[day] = [];
     byDay[day].push(r);
@@ -1505,7 +1616,7 @@ function buildRealData(days) {
     eExtra.push(+extra.toFixed(3));
   });
 
-  return { now, rows, labels, restriction, watts, gpm, expectedWatts, flow, flowReference, flowLoss, eLabels, eBase, eExtra,
+  return { now, rows, labels, restriction, watts, gpm, expectedWatts, flow, pressurePsi, flowReference, flowLoss, pressureReference, pressureRise, eLabels, eBase, eExtra,
            cleanBaselines, latestRow: rows[rows.length - 1] };
 }
 
@@ -1699,6 +1810,7 @@ function parseCSV(text) {
     const v = line.split(',');
     const o = {};
     hdrs.forEach((h, i) => o[h] = (v[i] || '').trim());
+    const rawPressurePsi = +o.pressure_psi;
     return {
       ts:          o.timestamp,
       watts:       +o.power_watts,
@@ -1709,6 +1821,7 @@ function parseCSV(text) {
       mode:        o.speed_mode,
       level:       o.alert_level,
       pressureRaw: +(o.pressure_raw || o.rpm),
+      pressurePsi: Number.isFinite(rawPressurePsi) ? rawPressurePsi : null,
       activeProgram: o.active_program || '',
       activeReference: o.active_reference || '',
       activeSetpoint: o.active_setpoint === '' ? null : +o.active_setpoint,
@@ -1722,6 +1835,7 @@ function parseCSV(text) {
   const trustedRows = freshRows.filter(hasVerifiedProgramContext);
   cleanBaselines = computeCleanBaselines(trustedRows);
   cleanFlowReferences = computeCleanFlowReferences(trustedRows);
+  cleanPressureReferences = computeCleanPressureReferences(trustedRows);
 }
 
 // ── Desktop alerts ───────────────────────────────────────────
