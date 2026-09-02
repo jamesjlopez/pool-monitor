@@ -16,6 +16,8 @@ CALIBRATED_CONFIG = {
         "low_speed": {
             "alert_psi": 12,
             "emergency_psi": 18,
+            "baseline_flow_gph": 1800,
+            "flow_alert_drop_pct": 35,
             "baseline_watts_per_gph": 0.083,  # ~150W / 1800 GPH
             "alert_ratio_pct": 30,
             "emergency_ratio_pct": 80,
@@ -23,6 +25,8 @@ CALIBRATED_CONFIG = {
         "high_speed": {
             "alert_psi": 20,
             "emergency_psi": 30,
+            "baseline_flow_gph": 4200,
+            "flow_alert_drop_pct": 35,
             "baseline_watts_per_gph": 0.143,  # ~600W / 4200 GPH
             "alert_ratio_pct": 30,
             "emergency_ratio_pct": 80,
@@ -39,6 +43,8 @@ UNCALIBRATED_CONFIG = {
         "low_speed": {
             "alert_psi": 12,
             "emergency_psi": 18,
+            "baseline_flow_gph": 1800,
+            "flow_alert_drop_pct": 35,
             "baseline_watts_per_gph": None,
             "alert_ratio_pct": 30,
             "emergency_ratio_pct": 80,
@@ -46,6 +52,8 @@ UNCALIBRATED_CONFIG = {
         "high_speed": {
             "alert_psi": 20,
             "emergency_psi": 30,
+            "baseline_flow_gph": 4200,
+            "flow_alert_drop_pct": 35,
             "baseline_watts_per_gph": None,
             "alert_ratio_pct": 30,
             "emergency_ratio_pct": 80,
@@ -55,8 +63,11 @@ UNCALIBRATED_CONFIG = {
 }
 
 
-def make_status(rpm=1050, watts=148.0, gph=1820.0, running=True) -> PumpStatus:
-    return PumpStatus(rpm=rpm, power_watts=watts, flow_gph=gph, is_running=running)
+def make_status(rpm=1050, watts=148.0, gph=1820.0, running=True, pressure=None) -> PumpStatus:
+    return PumpStatus(
+        rpm=rpm, power_watts=watts, flow_gph=gph, is_running=running,
+        pressure_psi=pressure,
+    )
 
 
 def feed_n(engine, status, n):
@@ -138,6 +149,7 @@ class TestNormalOperation:
                 "high_speed": {
                     **CALIBRATED_CONFIG["thresholds"]["high_speed"],
                     "baseline_watts_per_gph": 0.1929,
+                    "baseline_flow_gph": 2148,
                     "alert_ratio_pct": 100,
                     "emergency_ratio_pct": 300,
                 },
@@ -150,12 +162,41 @@ class TestNormalOperation:
             flow_gph=2148,
             is_running=True,
             speed_mode="high",
+            pressure_psi=19,
         )
         results = feed_n(engine, schedule_high, 3)
         assert results[-1].level == AlertLevel.NORMAL
 
 
 class TestWarnThreshold:
+    def test_direct_pressure_warns_even_when_ratio_is_normal(self):
+        engine = Engine(CALIBRATED_CONFIG)
+        results = feed_n(engine, make_status(pressure=12.5), 3)
+
+        assert results[-1].level == AlertLevel.WARN
+        assert "Pressure 12.50 PSI" in results[-1].reason
+
+    def test_flow_loss_warns_even_when_pressure_is_normal(self):
+        engine = Engine(CALIBRATED_CONFIG)
+        results = feed_n(engine, make_status(watts=148, gph=1100, pressure=10), 3)
+
+        assert results[-1].level == AlertLevel.WARN
+        assert "Flow loss" in results[-1].reason
+
+    def test_pressure_and_flow_paths_are_combined_with_or_logic(self):
+        engine = Engine(CALIBRATED_CONFIG)
+        results = feed_n(engine, make_status(watts=148, gph=900, pressure=18.5), 3)
+
+        assert results[-1].level == AlertLevel.CRITICAL
+        assert "Pressure 18.50 PSI" in results[-1].reason
+        assert "Flow loss" in results[-1].reason
+
+    def test_flow_loss_never_escalates_to_critical_on_its_own(self):
+        engine = Engine(CALIBRATED_CONFIG)
+        results = feed_n(engine, make_status(watts=148, gph=500, pressure=10), 3)
+
+        assert results[-1].level == AlertLevel.WARN
+
     def test_repeated_cloud_snapshot_does_not_confirm_alert(self):
         """Fast retries need newer source telemetry, not three copies of one sample."""
         engine = Engine(CALIBRATED_CONFIG)

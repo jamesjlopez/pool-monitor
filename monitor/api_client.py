@@ -9,7 +9,7 @@ Field mapping (reverse-engineered from API response):
   s3   = running state (1 = on)
   s14  = active program index, 0-based (0 = zp1, 1 = zp2 "Low speed", 2 = zp3 "High speed")
   s16  = active setpoint value (unit depends on s15 reference type)
-  s17  = actual RPM
+  s17  = current pressure (hundredths of PSI)
   s18  = actual power (watts)
   s19  = current motor speed (tenths %) — NOT flow; 705 = 70.5% speed
   s26  = current estimated flow (tenths GPM) — 139 = 13.9 GPM; fluctuates under load
@@ -283,7 +283,12 @@ def _parse_status(device_data: dict) -> PumpStatus:
             return float(default)
 
     is_running  = int(fval("s3", 0)) == 1
-    rpm         = int(fval("s17", 0))
+    pressure_raw = fval("s17", 0.0)
+    # s17 is labeled "Current Pressure" by the device and is expressed in
+    # hundredths of PSI (for example, 1950 = 19.50 PSI). Keep its raw value in
+    # the legacy rpm field until the historical CSV schema can be retired.
+    rpm         = int(pressure_raw)
+    pressure_psi = pressure_raw / 100 if pressure_raw > 0 else None
     power_watts = fval("s18", 0.0)
     flow_gph    = fval("s26", 0.0) / 10.0 * 60.0  # s26: tenths GPM → GPH
     active_setpoint = fval("s16", 0.0)  # unit is determined by s15 / program reference
@@ -316,6 +321,7 @@ def _parse_status(device_data: dict) -> PumpStatus:
         power_watts=power_watts,
         flow_gph=flow_gph,
         is_running=is_running,
+        pressure_psi=pressure_psi,
         speed_mode=speed_mode if is_running else "off",
         telemetry_version=telemetry_version or None,
         raw={

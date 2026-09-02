@@ -21,6 +21,7 @@ class PumpStatus:
     power_watts: float
     flow_gph: float
     is_running: bool
+    pressure_psi: Optional[float] = None
     timestamp: float = field(default_factory=time.time)
     speed_mode: str = ""   # "low" | "high" | "off" — auto-derived if empty
     telemetry_version: Optional[str] = None

@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
 Pool Monitor Engine
-Speed-aware anomaly detection using watts-per-GPH ratio as a proxy for filter pressure.
+Speed-aware hydraulic monitoring using direct pressure and independent flow loss.
 
-Since the pump's digital interface reports RPM, watts, and flow (GPH) but not PSI,
-we detect filter clogging by watching the watts/GPH efficiency ratio. A clogged filter
-increases backpressure, which reduces flow while the pump maintains or increases power —
-causing the ratio to rise above a calibrated baseline.
-
-Calibrate baseline_watts_per_gph in config.yaml after observing the pump on a clean filter.
-Until calibrated, the engine uses conservative flow-drop heuristics only.
+The pump reports pressure (PSI), power, and flow (GPH). A sustained high pressure
+or a sustained flow drop from a known-clean program baseline triggers a warning.
+Pressure alone can escalate to CRITICAL; flow loss remains a warning-only signal
+until its calibration has accumulated more clean-filter evidence.
 """
 
 import logging
@@ -215,6 +212,46 @@ class Engine:
                 consecutive_count=1,
             )
 
+        direct_signals = []
+        pressure = status.pressure_psi
+        if pressure is not None:
+            emergency_psi = scfg.get("emergency_psi")
+            alert_psi = scfg.get("alert_psi")
+            if emergency_psi is not None and pressure >= emergency_psi:
+                level = AlertLevel.CRITICAL
+                direct_signals.append(
+                    f"Pressure {pressure:.2f} PSI is at/above the {emergency_psi:g} PSI emergency threshold"
+                )
+            elif alert_psi is not None and pressure >= alert_psi:
+                level = AlertLevel.WARN
+                direct_signals.append(
+                    f"Pressure {pressure:.2f} PSI is at/above the {alert_psi:g} PSI alert threshold"
+                )
+
+        clean_flow = scfg.get("baseline_flow_gph")
+        flow_alert_drop = scfg.get("flow_alert_drop_pct")
+        if clean_flow and flow_alert_drop is not None:
+            flow_drop_pct = (1 - status.flow_gph / clean_flow) * 100
+            if flow_drop_pct >= flow_alert_drop:
+                level = max(level, AlertLevel.WARN)
+                direct_signals.append(
+                    f"Flow loss {flow_drop_pct:.0f}% vs provisional clean baseline "
+                    f"{clean_flow:.0f} GPH"
+                )
+
+        if pressure is not None:
+            return EngineResult(
+                level=level,
+                reason="; ".join(direct_signals) if direct_signals else (
+                    f"Normal — pressure {pressure:.2f} PSI and flow {status.flow_gph:.0f} GPH"
+                ),
+                speed_mode=status.speed_mode,
+                watts_per_gph=ratio,
+                baseline_watts_per_gph=baseline,
+            )
+
+        # Preserve the ratio heuristic only for older/test telemetry that lacks
+        # direct pressure. Live Pentair samples use the two direct signals above.
         if baseline:
             deviation_pct = ((ratio - baseline) / baseline) * 100
             emergency_pct = scfg.get("emergency_ratio_pct", 80)

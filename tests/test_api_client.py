@@ -73,6 +73,7 @@ class TestFixtureParsing:
         assert status.raw["prog_name"] == "low speed"
         assert status.raw["active_reference"] == "3"
         assert status.raw["active_setpoint"] == 705.0
+        assert status.pressure_psi == 10.5
 
     def test_low_clean_speed_mode(self):
         client = MockPentairClient(fixture_path=FIXTURES / "pump_low_clean.json")
