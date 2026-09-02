@@ -286,7 +286,8 @@ def _parse_status(device_data: dict) -> PumpStatus:
     rpm         = int(fval("s17", 0))
     power_watts = fval("s18", 0.0)
     flow_gph    = fval("s26", 0.0) / 10.0 * 60.0  # s26: tenths GPM → GPH
-    target_gph  = fval("s16", 0.0)     # program setpoint
+    active_setpoint = fval("s16", 0.0)  # unit is determined by s15 / program reference
+    active_reference = fields.get("s15", {}).get("value", "")
     prog_idx    = int(fval("s14", 0))  # 0-based active program
 
     # Derive speed mode from active program name
@@ -321,7 +322,8 @@ def _parse_status(device_data: dict) -> PumpStatus:
             "deviceId": device_data.get("deviceId"),
             "prog_idx": prog_idx,
             "prog_name": prog_name,
-            "target_gph": target_gph,
+            "active_reference": active_reference,
+            "active_setpoint": active_setpoint,
             "fields_snapshot": {k: fields[k].get("value") if isinstance(fields[k], dict)
                                 else fields[k] for k in (
                                     "appuse", "d25", "s3", "s14", "s16",

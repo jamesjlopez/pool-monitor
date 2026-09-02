@@ -60,6 +60,20 @@ class TestFixtureParsing:
 
         assert status.telemetry_version == "device-update|rpm-update|watts-update|flow-update"
 
+    def test_cloud_status_preserves_active_program_context(self):
+        status = _parse_status({
+            "fields": {
+                "s3": {"value": "1"}, "s14": {"value": "1"},
+                "s15": {"value": "3"}, "s16": {"value": "705"},
+                "s17": {"value": "1050"}, "s18": {"value": "148"}, "s26": {"value": "303"},
+                "zp2e2": {"value": "Low speed"},
+            },
+        })
+
+        assert status.raw["prog_name"] == "low speed"
+        assert status.raw["active_reference"] == "3"
+        assert status.raw["active_setpoint"] == 705.0
+
     def test_low_clean_speed_mode(self):
         client = MockPentairClient(fixture_path=FIXTURES / "pump_low_clean.json")
         status = client.get_status()

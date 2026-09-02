@@ -57,6 +57,22 @@ class TestDataLogger:
         assert rows[0]["alert_level"] == "normal"
         assert float(rows[0]["rpm"]) == 1441
 
+    def test_logs_active_program_context_for_flow_comparisons(self, tmp_path):
+        path = tmp_path / "metrics.csv"
+        status = make_status()
+        status.raw = {
+            "prog_name": "Low speed",
+            "active_reference": "3",
+            "active_setpoint": 705.0,
+        }
+
+        DataLogger(path).log(status, make_result())
+
+        row = read_csv(path)[0]
+        assert row["active_program"] == "Low speed"
+        assert row["active_reference"] == "3"
+        assert float(row["active_setpoint"]) == 705.0
+
     def test_skips_pump_off(self, tmp_path):
         path = tmp_path / "metrics.csv"
         logger = DataLogger(path)
@@ -128,6 +144,21 @@ class TestDataLogger:
         ))
 
         assert read_csv(path)[0]["telemetry_quality"] == "duplicate"
+
+    def test_upgrades_existing_telemetry_quality_csv_with_blank_program_context(self, tmp_path):
+        path = tmp_path / "metrics.csv"
+        old_columns = COLUMNS[:-3]
+        with open(path, "w", newline="") as f:
+            csv.writer(f).writerows([
+                old_columns,
+                ["2026-08-28T12:15:00", 1991, 608, 1296, 0.4691, "high", "normal", 0.2038, "fresh"],
+            ])
+
+        DataLogger(path)
+
+        row = read_csv(path)[0]
+        assert row["telemetry_quality"] == "fresh"
+        assert row["active_program"] == ""
 
     def test_critical_level_logged_correctly(self, tmp_path):
         path = tmp_path / "metrics.csv"

@@ -1,5 +1,5 @@
 """
-Recalibrator — detects filter-cleaning events and auto-updates baselines in config.yaml.
+Recalibrator — detects possible filter-cleaning events.
 
 Detection pattern:
   The filter gradually clogs → ratio rises above clean baseline → user cleans →
@@ -10,12 +10,12 @@ We detect this as a two-phase signal:
      were elevated above baseline * ELEVATED_THRESHOLD.
   2. "Now clean": CLEAN_READINGS_REQUIRED consecutive readings below CLEAN_LANDING * baseline.
 
-When both conditions are met, we compute the new clean baseline (mean of clean readings),
-update config.yaml in-place, and return a RecalibrationEvent.
+When both conditions are met, we compute a candidate clean baseline (mean of clean readings).
+Candidates are recorded for review, but are not applied automatically: ordinary telemetry
+changes can otherwise be mistaken for a filter cleaning and hide a real restriction.
 
 First-run note: the recalibrator requires an existing baseline in config.yaml to operate.
-The very first cleaning must be calibrated manually — after that, subsequent cleanings are
-auto-detected.
+The baseline must be calibrated manually; subsequent candidate events are retained for review.
 """
 
 import json
@@ -53,14 +53,15 @@ class RecalibrationEvent:
     speed_mode: str
     old_baseline: float
     new_baseline: float
-    baseline_updated: bool   # False when new ≈ old (cleaning confirmed but no config change)
+    baseline_updated: bool   # True only when explicitly configured to apply the candidate
     timestamp: str
 
 
 class Recalibrator:
-    def __init__(self, config_path: Path, log_path: Path):
+    def __init__(self, config_path: Path, log_path: Path, *, auto_apply: bool = False):
         self._config_path = config_path
         self._log_path = log_path
+        self._auto_apply = auto_apply
         # Rolling history of recent ratios (as multiples of baseline) per speed mode
         self._history:       dict[str, deque] = defaultdict(lambda: deque(maxlen=ELEVATED_HISTORY_SIZE))
         # Accumulating window of consecutive near-baseline readings
@@ -151,7 +152,7 @@ class Recalibrator:
         self._clean_window[speed_mode].clear()
         self._history[speed_mode].clear()  # reset so we don't re-trigger immediately
 
-        baseline_updated = abs(new_baseline - baseline) >= MIN_BASELINE_CHANGE
+        baseline_updated = self._auto_apply and abs(new_baseline - baseline) >= MIN_BASELINE_CHANGE
         event = RecalibrationEvent(
             speed_mode=speed_mode,
             old_baseline=baseline,
@@ -169,10 +170,16 @@ class Recalibrator:
                 )
             else:
                 event.baseline_updated = False
-        else:
+        elif self._auto_apply:
             log.info(
                 "Filter cleaning detected [%s] — baseline unchanged (%.4f W/GPH, delta < threshold)",
                 speed_mode, baseline,
+            )
+        else:
+            log.warning(
+                "Possible filter cleaning detected [%s] — candidate %.4f W/GPH recorded; "
+                "automatic baseline updates are disabled",
+                speed_mode, new_baseline,
             )
 
         self._log_event(event)

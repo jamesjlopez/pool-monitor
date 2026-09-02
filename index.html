@@ -537,6 +537,35 @@ body {
   <!-- Grid -->
   <div class="grid">
 
+    <!-- Return flow (independent hydraulic signal) -->
+    <section class="widget span-2">
+      <div class="widget-head">
+        <div class="widget-titles">
+          <div class="widget-title">Return flow
+            <button class="info-btn" type="button" aria-expanded="false" data-info="info-flow" aria-label="What is this?">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
+            </button>
+          </div>
+          <div class="widget-eyebrow">An independent check on the water you can feel at the return</div>
+        </div>
+        <div class="legend" id="legend-flow"></div>
+      </div>
+      <div class="tech-note" id="info-flow">
+        <div class="tech-note-inner">
+          <b>Clean-flow reference</b> — the 90th-percentile flow seen for the same active
+          program, reference type, and setpoint. Older readings without that context are grouped
+          by speed mode. This is diagnostic: a falling line shows lost return flow even if the
+          watts/GPH alert baseline has become stale.
+        </div>
+      </div>
+      <div class="chart-wrap med"><canvas id="chart-flow"></canvas></div>
+      <div class="statline">
+        <div class="stat"><div class="k">Flow now</div><div class="v" id="st-flow-now">—</div></div>
+        <div class="stat"><div class="k">Clean reference</div><div class="v" id="st-flow-ref">—</div></div>
+        <div class="stat"><div class="k">Flow loss</div><div class="v" id="st-flow-loss">—</div></div>
+      </div>
+    </section>
+
     <!-- Filter restriction (primary) -->
     <section class="widget span-2">
       <div class="widget-head">
@@ -706,6 +735,7 @@ const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue"
 let allRows           = [];
 let freshRows         = [];
 let cleanBaselines    = {};
+let cleanFlowReferences = {};
 let dashCfg           = defaultDashboardConfig();
 let currentDays       = 7;
 let charts            = {};
@@ -1086,6 +1116,54 @@ function renderCharts(d) {
     { label: 'Extra cost from clog', color: C.amber, dot: true },
   ]);
 
+  // Return flow: an independent hydraulic signal. The dashed line is learned
+  // only from the same active program/reference/setpoint when that context exists.
+  const flowGpm = d.flow.map(v => v != null ? +(v / 60).toFixed(1) : null);
+  const flowReferenceGpm = d.flowReference.map(v => v != null ? +(v / 60).toFixed(1) : null);
+  const peakFlow = Math.max(...flowGpm.filter(v => v != null), ...flowReferenceGpm.filter(v => v != null), 0);
+  charts.flow = new Chart(document.getElementById('chart-flow'), {
+    type: 'line',
+    data: { labels: d.labels, datasets: [
+      {
+        label: 'Return flow', data: flowGpm,
+        borderColor: C.cyan, borderWidth: 2, tension: 0.35,
+        pointRadius: 0, pointHoverRadius: 4,
+        pointHoverBackgroundColor: C.cyan, pointHoverBorderColor: '#030a15', pointHoverBorderWidth: 2,
+        fill: true, backgroundColor: ctx => gradient(ctx.chart.ctx, ctx.chart.chartArea, C.cyan, 0.22, 0.0),
+      },
+      {
+        label: 'Clean reference', data: flowReferenceGpm,
+        borderColor: C.green, borderWidth: 1.5, borderDash: [6, 5], pointRadius: 0, tension: 0,
+      },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...TOOLTIP_BASE, callbacks: {
+          title: items => fmtTime(d.labels[items[0].dataIndex]),
+          label: c => c.parsed.y == null ? null : `  ${c.dataset.label}: ${c.parsed.y.toFixed(1)} GPM`,
+          afterBody: items => {
+            const loss = d.flowLoss[items[0].dataIndex];
+            return loss == null ? [] : [`  Flow loss: ${loss.toFixed(0)}%`];
+          },
+        }},
+      },
+      scales: {
+        x: { ...BASE_X, ticks: { ...BASE_X.ticks, callback: v => fmtDay(d.labels[v]) } },
+        y: yAxis({ suggestedMin: 0, suggestedMax: Math.ceil(peakFlow * 1.12 / 5) * 5,
+          ticks: { color: C.text3, padding: 10, maxTicksLimit: 6, callback: v => v + ' GPM' },
+        }),
+      },
+    },
+    plugins: [crosshair],
+  });
+  legend('legend-flow', [
+    { label: 'Measured flow', color: C.cyan },
+    { label: 'Clean reference', color: C.green, dash: true },
+  ]);
+
   // Pump workload: extra watts (actual − expected per-band baseline)
   // Sits near 0 when clean, rises with clogging — independent of speed program switches.
   const extraWatts = d.watts.map((w, i) => {
@@ -1205,6 +1283,13 @@ function setHeroFromData(d) {
 
   document.getElementById('st-watts').innerHTML = latestW + '<small>W</small>';
   document.getElementById('st-gpm').innerHTML   = latestG + '<small>GPM</small>';
+  const flowRef = d.flowReference[d.flowReference.length - 1];
+  const flowLoss = d.flowLoss[d.flowLoss.length - 1];
+  document.getElementById('st-flow-now').innerHTML = latestG + '<small>GPM</small>';
+  document.getElementById('st-flow-ref').innerHTML = flowRef !== null
+    ? (flowRef / 60).toFixed(1) + '<small>GPM</small>' : '—';
+  document.getElementById('st-flow-loss').innerHTML = flowLoss !== null
+    ? (flowLoss >= 0 ? '−' : '+') + Math.abs(flowLoss).toFixed(0) + '<small>%</small>' : '—';
   const extraEl = document.getElementById('st-extra-watts');
   if (extraW !== null) {
     extraEl.innerHTML = (extraW > 0 ? '+' : '') + extraW + '<small>W</small>';
@@ -1341,6 +1426,33 @@ function expectedWattsForRow(r, cleanBaselines) {
   return baseline ? Math.round(baseline * r.gph) : null;
 }
 
+function flowKey(r) {
+  if (r.activeProgram && r.activeReference !== '' && r.activeSetpoint !== null) {
+    return `program:${r.activeProgram}|ref:${r.activeReference}|setpoint:${r.activeSetpoint}`;
+  }
+  return `legacy:${r.mode}`;
+}
+
+function computeCleanFlowReferences(rows) {
+  const groups = {};
+  rows.forEach(r => {
+    if (!r.gph) return;
+    const key = flowKey(r);
+    (groups[key] ||= []).push(r.gph);
+  });
+  const references = {};
+  Object.entries(groups).forEach(([key, flows]) => {
+    if (flows.length < 5) return;
+    flows.sort((a, b) => a - b);
+    references[key] = flows[Math.floor((flows.length - 1) * 0.90)];
+  });
+  return references;
+}
+
+function flowReferenceForRow(r, references) {
+  return references[flowKey(r)] ?? null;
+}
+
 function buildRealData(days) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
@@ -1355,6 +1467,9 @@ function buildRealData(days) {
   const watts         = rows.map(r => r.watts);
   const gpm           = rows.map(r => r.gpm !== null ? +r.gpm.toFixed(1) : null);
   const expectedWatts = rows.map(r => expectedWattsForRow(r, cleanBaselines));
+  const flow = rows.map(r => r.gph || null);
+  const flowReference = rows.map(r => flowReferenceForRow(r, cleanFlowReferences));
+  const flowLoss = flow.map((value, i) => flowReference[i] ? (1 - value / flowReference[i]) * 100 : null);
 
   // Daily energy cost
   const byDay = {};
@@ -1387,7 +1502,7 @@ function buildRealData(days) {
     eExtra.push(+extra.toFixed(3));
   });
 
-  return { now, rows, labels, restriction, watts, gpm, expectedWatts, eLabels, eBase, eExtra,
+  return { now, rows, labels, restriction, watts, gpm, expectedWatts, flow, flowReference, flowLoss, eLabels, eBase, eExtra,
            cleanBaselines, latestRow: rows[rows.length - 1] };
 }
 
@@ -1591,12 +1706,16 @@ function parseCSV(text) {
       mode:        o.speed_mode,
       level:       o.alert_level,
       rpm:         +o.rpm,
+      activeProgram: o.active_program || '',
+      activeReference: o.active_reference || '',
+      activeSetpoint: o.active_setpoint === '' ? null : +o.active_setpoint,
       telemetryQuality: o.telemetry_quality || 'legacy',
     };
   }).filter(r => r.ratio !== null);
   annotateRows(allRows);
   freshRows = allRows.filter(r => r.telemetryQuality !== 'duplicate');
   cleanBaselines = computeCleanBaselines(freshRows);
+  cleanFlowReferences = computeCleanFlowReferences(freshRows);
 }
 
 // ── Desktop alerts ───────────────────────────────────────────

@@ -209,7 +209,8 @@ def run_once(
     if data_logger is not None:
         data_logger.log(status, result)
 
-    # Auto-recalibration: detect clean-filter events and update baseline
+    # Recalibration candidates are recorded for review. They only update the active
+    # baseline when a caller explicitly enables Recalibrator(auto_apply=True).
     if recalibrator is not None and result.level == AlertLevel.NORMAL and result.telemetry_fresh:
         event = recalibrator.observe(status, config)
         if event and not dry_run:
@@ -221,14 +222,6 @@ def run_once(
                         f"Filter cleaning detected [{event.speed_mode} speed]. "
                         f"Baseline auto-updated: {event.old_baseline:.4f} → {event.new_baseline:.4f} W/GPH. "
                         f"config.yaml has been rewritten."
-                    ),
-                )
-            else:
-                notifier.send_info(
-                    "Pool Filter Cleaned — Baseline Confirmed",
-                    (
-                        f"Filter cleaning detected [{event.speed_mode} speed]. "
-                        f"Clean baseline confirmed at {event.old_baseline:.4f} W/GPH — no update needed."
                     ),
                 )
 

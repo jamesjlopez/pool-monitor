@@ -19,7 +19,7 @@ RETENTION_DAYS = 30
 COLUMNS = [
     "timestamp", "rpm", "power_watts", "flow_gph",
     "watts_per_gph", "speed_mode", "alert_level", "baseline_watts_per_gph",
-    "telemetry_quality",
+    "telemetry_quality", "active_program", "active_reference", "active_setpoint",
 ]
 
 
@@ -31,18 +31,18 @@ class DataLogger:
             with open(path, "x", newline="") as f:
                 csv.writer(f).writerow(COLUMNS)
         except FileExistsError:
-            self._add_telemetry_quality_column()
+            self._upgrade_columns()
 
-    def _add_telemetry_quality_column(self) -> None:
-        """Upgrade the existing CSV without losing its historical readings."""
+    def _upgrade_columns(self) -> None:
+        """Add telemetry fields to an existing CSV without losing historical rows."""
         try:
             with open(self._path, newline="") as f:
                 reader = csv.reader(f)
                 header = next(reader, None)
-                if not header or "telemetry_quality" in header:
+                if not header or header == COLUMNS:
                     return
-                if header != COLUMNS[:-1]:
-                    log.warning("metrics CSV has an unexpected header; skipping telemetry-quality migration")
+                if any(column not in COLUMNS for column in header):
+                    log.warning("metrics CSV has an unexpected header; skipping schema migration")
                     return
                 rows = list(reader)
         except OSError:
@@ -50,7 +50,12 @@ class DataLogger:
         with open(self._path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(COLUMNS)
-            writer.writerows([row + ["legacy"] for row in rows if row])
+            for row in rows:
+                if not row:
+                    continue
+                values = dict(zip(header, row))
+                values.setdefault("telemetry_quality", "legacy")
+                writer.writerow([values.get(column, "") for column in COLUMNS])
 
     def log(self, status: PumpStatus, result: EngineResult) -> None:
         if not status.is_running or status.rpm == 0 or status.flow_gph <= 0 or status.power_watts == 0:
@@ -65,6 +70,9 @@ class DataLogger:
             result.level.name.lower(),
             round(result.baseline_watts_per_gph, 4) if result.baseline_watts_per_gph else "",
             "fresh" if result.telemetry_fresh else "duplicate",
+            status.raw.get("prog_name", ""),
+            status.raw.get("active_reference", ""),
+            status.raw.get("active_setpoint", ""),
         ]
         with open(self._path, "a", newline="") as f:
             csv.writer(f).writerow(row)
