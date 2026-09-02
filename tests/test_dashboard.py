@@ -60,3 +60,15 @@ def test_only_manual_cleanings_create_filter_restriction_chart_markers():
     assert "type:  'manual'" in cleaning_builder
     assert "return manual;" in cleaning_builder
     assert "Possible filter cleaning — unverified" in html
+
+
+def test_chart_range_uses_latest_telemetry_instead_of_browser_clock():
+    """A phone with an inaccurate clock must still show the available history."""
+    html = DASHBOARD.read_text()
+    data_builder = html[
+        html.index("function buildRealData(days)"):
+        html.index("// ── Build alert/issue arrays")
+    ]
+
+    assert "const now = new Date(freshRows[freshRows.length - 1].ts);" in data_builder
+    assert "const cutoff = new Date(now);" in data_builder

@@ -1452,14 +1452,15 @@ function flowReferenceForRow(r, references) {
 }
 
 function buildRealData(days) {
-  const cutoff = new Date();
+  const now = new Date(freshRows[freshRows.length - 1].ts);
+  if (isNaN(now)) return null;
+  const cutoff = new Date(now);
   cutoff.setDate(cutoff.getDate() - days);
   const rows = freshRows.filter(r => new Date(r.ts) >= cutoff);
   if (!rows.length) return null;
 
   // Build baselines from ALL loaded history, not just the display window,
   // so we always have clean-filter reference points even for recent dirty periods.
-  const now    = new Date(rows[rows.length - 1].ts);
   const labels = rows.map(r => new Date(r.ts));
   const restriction   = rows.map(r => r.pct);
   const watts         = rows.map(r => r.watts);
@@ -1476,7 +1477,7 @@ function buildRealData(days) {
     if (!byDay[day]) byDay[day] = [];
     byDay[day].push(r);
   });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = now.toISOString().slice(0, 10);
   const dayKeys = Object.keys(byDay).sort().filter(d => d !== today);
   const eLabels = dayKeys.map(d => new Date(d + 'T12:00:00'));
   const eBase = [], eExtra = [];
