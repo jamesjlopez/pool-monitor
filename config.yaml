@@ -13,31 +13,27 @@ thresholds:
   startup_grace_seconds: 120          # suppress alerts for 2 min after pump starts
   consecutive_readings_required: 3    # require N readings in a row before alerting
 
-  # This pump runs in FLOW-CONTROL mode: it maintains target GPH by adjusting RPM.
-  # Clogging causes watts to rise (pump spins faster to hold the flow target).
-  #
-  # This pump runs in FLOW-CONTROL mode: it adjusts RPM to maintain target flow.
-  # Clogging causes watts to rise while flow holds steady → ratio rises above baseline.
-  #
-  # Prior baselines used s19 (motor speed %, not actual flow).
-  # Now using s26 (tenths GPM — the real measured flow).
-  #
-  # To recalibrate: after cleaning, let pump run 30 min, then check the monitor
-  # log for a stable reading. Set baseline_watts_per_gph = watts / flow_gph.
+  # Dual-signal monitoring: direct pressure (s17, hundredths of PSI) OR flow loss
+  # from a known-clean fixed-speed program can send a warning. Only direct pressure
+  # may escalate to CRITICAL / emergency shutoff.
 
   low_speed:
-    # Speed mode: pump program name contains "low", OR RPM < 1500
+    # Low speed program runs at 70.5% motor speed.
     alert_psi: 12
     emergency_psi: 18
-    baseline_watts_per_gph: 0.1515    # auto-recalibrated 2026-07-10 10:15
+    baseline_flow_gph: 3510        # provisional clean reference (58.5 GPM, 2026-08-17)
+    flow_alert_drop_pct: 35        # WARN if sustained flow is ≥35% below clean reference
+    baseline_watts_per_gph: 0.2027    # auto-recalibrated 2026-08-29 08:45
     alert_ratio_pct: 100              # WARN if ratio >100% above clean baseline
     emergency_ratio_pct: 300          # CRITICAL if ratio >300% above clean baseline
 
   high_speed:
-    # Speed mode: pump program name contains "high", OR RPM >= 1500
+    # High speed program uses its own clean-flow reference.
     alert_psi: 20
     emergency_psi: 30
-    baseline_watts_per_gph: 0.1895    # auto-recalibrated 2026-06-30 12:45
+    baseline_flow_gph: 3804        # provisional clean reference (63.4 GPM)
+    flow_alert_drop_pct: 35        # WARN if sustained flow is ≥35% below clean reference
+    baseline_watts_per_gph: 0.2038    # auto-recalibrated 2026-08-17 12:15
     alert_ratio_pct: 100              # WARN if ratio >100% above clean baseline
     emergency_ratio_pct: 300
 
