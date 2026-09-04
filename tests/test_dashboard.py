@@ -194,6 +194,16 @@ def test_logged_cleanings_mark_both_return_flow_and_pressure_charts():
     assert "cleaningMarkersPlugin(allCleanings)" in pressure_chart
 
 
+def test_isolated_verified_hydraulic_readings_have_visible_markers():
+    """A valid reading between stale gaps must not disappear from either chart."""
+    html = DASHBOARD.read_text()
+
+    flow_chart = html[html.index("charts.flow = new Chart"):html.index("// Filter pressure")]
+    pressure_chart = html[html.index("charts.pressure = new Chart"):html.index("// Pump workload")]
+    assert "pointRadius: ctx => ctx.raw == null ? 0 : 3" in flow_chart
+    assert "pointRadius: ctx => ctx.raw == null ? 0 : 3" in pressure_chart
+
+
 def test_missing_or_malformed_psi_telemetry_is_a_chart_gap():
     """Older CSV headers and malformed PSI values must not leak NaN into chart data."""
     html = DASHBOARD.read_text()

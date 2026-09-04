@@ -1152,7 +1152,7 @@ function renderCharts(d) {
       {
         label: 'Return flow', data: flowGpm,
         borderColor: C.cyan, borderWidth: 2, tension: 0.35,
-        pointRadius: 0, pointHoverRadius: 4,
+        pointRadius: ctx => ctx.raw == null ? 0 : 3, pointHoverRadius: 4,
         pointHoverBackgroundColor: C.cyan, pointHoverBorderColor: '#030a15', pointHoverBorderWidth: 2,
         fill: true, backgroundColor: ctx => gradient(ctx.chart.ctx, ctx.chart.chartArea, C.cyan, 0.22, 0.0),
       },
@@ -1202,7 +1202,7 @@ function renderCharts(d) {
       {
         label: 'Filter pressure', data: d.pressurePsi,
         borderColor: C.purple, borderWidth: 2, tension: 0.35,
-        pointRadius: 0, pointHoverRadius: 4,
+        pointRadius: ctx => ctx.raw == null ? 0 : 3, pointHoverRadius: 4,
         pointHoverBackgroundColor: C.purple, pointHoverBorderColor: '#030a15', pointHoverBorderWidth: 2,
         fill: true,
         backgroundColor: ctx => gradient(ctx.chart.ctx, ctx.chart.chartArea, C.purple, 0.25, 0.0),
