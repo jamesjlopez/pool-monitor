@@ -1303,16 +1303,32 @@ function legend(id, items) {
 }
 
 // ── Update hero from data ────────────────────────────────────
+function latestFreshAlertLevel(rows) {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].telemetryQuality !== 'duplicate') return rows[i].level;
+  }
+  return rows.at(-1)?.level;
+}
+
 function setHeroFromData(d) {
   const nowPct  = d.restriction[d.restriction.length - 1] ?? 0;
   const peakPct = Math.max(...d.restriction);
   const latestW = d.watts[d.watts.length - 1] ?? 0;
   const latestG = d.gpm[d.gpm.length - 1] ?? 0;
   const lr      = d.latestRow;
+  const liveLevel = latestFreshAlertLevel(d.rows);
 
   // Status state
   let word, head, detail, status, glow;
-  if (nowPct >= 300) {
+  if (liveLevel === 'critical') {
+    word='Action needed'; head='Pump pressure is critically high';
+    detail='The live monitor reported a critical hydraulic condition. Stop and inspect the circulation path.';
+    status=C.red; glow='rgba(255,69,58,0.22)';
+  } else if (liveLevel === 'warn') {
+    word='Heads up'; head='Pump pressure needs attention';
+    detail='The live monitor reported elevated pressure. Check the pressure and return-flow charts before deciding what to clean.';
+    status=C.amber; glow='rgba(255,159,10,0.20)';
+  } else if (nowPct >= 300) {
     word='Action needed'; head='Clean the filter now';
     detail='Restriction is past the emergency line — flow is choked and the pump is working hard.';
     status=C.red; glow='rgba(255,69,58,0.22)';
@@ -1456,14 +1472,13 @@ function speedCfg(mode) {
   return dashCfg.speeds[mode] || dashCfg.speeds.low;
 }
 
-function annotateRows(rows) {
+function annotateRows(rows, cleanBaselines = {}) {
   const win = [];
   const req = dashCfg.consecutiveReadingsRequired;
   rows.forEach(r => {
-    const cfg   = speedCfg(r.mode);
-    r.baseline  = r.rowBaseline || cfg.baseline || null;
-    r.pct       = r.baseline ? +((r.ratio / r.baseline - 1) * 100).toFixed(2) : 0;
-    r.rawLevel  = rawLevelForPct(r.pct, r.mode);
+    r.baseline  = baselineForRow(r, cleanBaselines);
+    r.pct       = r.baseline ? +((r.ratio / r.baseline - 1) * 100).toFixed(2) : null;
+    r.rawLevel  = Number.isFinite(r.pct) ? rawLevelForPct(r.pct, r.mode) : 'normal';
 
     win.push(r.rawLevel);
     if (win.length > req) win.shift();
@@ -1510,11 +1525,19 @@ function hasVerifiedProgramContext(r) {
 }
 
 function expectedWattsForRow(r, cleanBaselines) {
+  const baseline = cleanBaselineForRow(r, cleanBaselines);
+  return baseline ? Math.round(baseline * r.gph) : null;
+}
+
+function cleanBaselineForRow(r, cleanBaselines) {
   if (!r.gph || !r.ratio) return null;
   if (r.mode === 'high') return null;  // high-speed ramp: no meaningful baseline, show gap
   const band = Math.round(r.gph / 200) * 200;
-  const baseline = cleanBaselines[band];
-  return baseline ? Math.round(baseline * r.gph) : null;
+  return cleanBaselines[band] || null;
+}
+
+function baselineForRow(r, cleanBaselines) {
+  return r.rowBaseline || speedCfg(r.mode).baseline || cleanBaselineForRow(r, cleanBaselines);
 }
 
 function flowKey(r) {
@@ -1830,10 +1853,10 @@ function parseCSV(text) {
       telemetryVersion: o.telemetry_version || null,
     };
   }).filter(r => r.ratio !== null);
-  annotateRows(allRows);
   freshRows = allRows.filter(r => r.telemetryQuality !== 'duplicate');
   const trustedRows = freshRows.filter(hasVerifiedProgramContext);
   cleanBaselines = computeCleanBaselines(trustedRows);
+  annotateRows(allRows, cleanBaselines);
   cleanFlowReferences = computeCleanFlowReferences(trustedRows);
   cleanPressureReferences = computeCleanPressureReferences(trustedRows);
 }

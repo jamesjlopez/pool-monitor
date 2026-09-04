@@ -1,9 +1,69 @@
 """Regression checks for static dashboard interactions."""
 
+import json
 from pathlib import Path
+import subprocess
 
 
 DASHBOARD = Path(__file__).parents[1] / "index.html"
+
+
+def test_restriction_uses_derived_clean_baseline_when_config_is_uncalibrated():
+    """An uncalibrated config must not flatten the restriction chart at zero."""
+    html = DASHBOARD.read_text()
+    helpers = html[
+        html.index("function speedCfg(mode)"):
+        html.index("function computeCleanSessionReferences(rows, valueForRow, percentile)")
+    ]
+    rows = [
+        {"gph": 1800, "ratio": 0.20, "mode": "low", "rowBaseline": None}
+        for _ in range(5)
+    ] + [{"gph": 1800, "ratio": 0.30, "mode": "low", "rowBaseline": None}]
+    script = "\n".join([
+        "let dashCfg = {speeds: {low: {baseline: null, alertPct: 100, emergencyPct: 300}}};",
+        helpers,
+        f"const rows = {json.dumps(rows)};",
+        "const baselines = computeCleanBaselines(rows);",
+        "annotateRows(rows, baselines);",
+        "console.log(JSON.stringify(rows.at(-1)));",
+    ])
+
+    result = subprocess.run(
+        ["node", "-e", script], check=True, capture_output=True, text=True
+    )
+    assert json.loads(result.stdout)["pct"] == 50
+
+
+def test_live_pressure_warning_overrides_a_low_restriction_hero_status():
+    """Direct engine warnings must never be rendered as an all-clear state."""
+    html = DASHBOARD.read_text()
+    hero = html[html.index("function setHeroFromData(d)"):html.index("// ── Config loading")]
+
+    assert "else if (liveLevel === 'warn')" in hero
+    assert "Pump pressure needs attention" in hero
+    assert hero.index("liveLevel === 'warn'") < hero.index("nowPct >= 100")
+
+
+def test_hero_uses_last_fresh_alert_level_when_latest_snapshot_is_duplicate():
+    """A duplicate cloud response must not clear a live pressure warning."""
+    html = DASHBOARD.read_text()
+    helper = html[
+        html.index("function latestFreshAlertLevel(rows)"):
+        html.index("function setHeroFromData(d)")
+    ]
+    script = "\n".join([
+        helper,
+        "const rows = [",
+        "  { telemetryQuality: 'fresh', level: 'warn' },",
+        "  { telemetryQuality: 'duplicate', level: 'normal' },",
+        "];",
+        "console.log(latestFreshAlertLevel(rows));",
+    ])
+
+    result = subprocess.run(
+        ["node", "-e", script], check=True, capture_output=True, text=True
+    )
+    assert result.stdout.strip() == "warn"
 
 
 def test_activity_history_controls_expand_and_restore_full_lists():
