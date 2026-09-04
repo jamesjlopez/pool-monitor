@@ -270,6 +270,26 @@ def test_upgrade_restores_last_fresh_telemetry_from_existing_metrics(mocker, tmp
     assert runner._last_fresh_telemetry_at == 1788365700.0
 
 
+def test_upgrade_restores_latest_verified_hydraulic_pair_from_existing_metrics(mocker, tmp_path):
+    import monitor.runner as runner
+
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "metrics.csv").write_text(
+        "timestamp,telemetry_quality,telemetry_version\n"
+        "2026-09-02T11:15:00,fresh,d|100|w|100\n"
+        "2026-09-02T11:30:00,fresh,d|110|w|100\n"
+        "2026-09-02T11:45:00,fresh,d|120|w|120\n"
+    )
+    mocker.patch.object(runner, "PROJECT_ROOT", tmp_path)
+    engine = Engine(CALIBRATED_CONFIG)
+
+    runner._restore_telemetry_checkpoint(engine)
+
+    assert engine._last_pressure_telemetry_version == "120"
+    assert engine._last_flow_telemetry_version == "120"
+
+
 def test_trend_check_skips_when_pump_is_off(mocker):
     """An old high-speed session cannot send a forecast while the pump is off."""
     import monitor.runner as runner

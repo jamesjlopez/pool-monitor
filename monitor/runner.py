@@ -54,6 +54,7 @@ from .api_client import MockPentairClient, PentairCloudClient
 
 from .data_logger import DataLogger
 from .engine import Engine
+from .hydraulic_quality import classify_hydraulic_rows
 from .notifier import NtfyNotifier
 from .recalibrator import Recalibrator
 from .trend import TrendAnalyzer
@@ -155,6 +156,10 @@ def _load_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
         levels = [AlertLevel[l.upper()] for l in state["window"] if l.upper() in AlertLevel.__members__]
         engine.seed_window(levels)
     engine.seed_telemetry_version(state.get("last_telemetry_version"))
+    engine.seed_hydraulic_telemetry_versions(
+        state.get("last_pressure_telemetry_version"),
+        state.get("last_flow_telemetry_version"),
+    )
     if "notifier_last_sent" in state:
         from .types import AlertLevel
         notifier._last_sent = {
@@ -165,7 +170,7 @@ def _load_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
     _last_trend_check = state.get("last_trend_check", 0.0)
     _last_fresh_telemetry_at = state.get("last_fresh_telemetry_at")
     _telemetry_stale_alert_sent = state.get("telemetry_stale_alert_sent", False)
-    if _last_fresh_telemetry_at is None:
+    if _last_fresh_telemetry_at is None or engine._last_pressure_telemetry_version is None:
         _restore_telemetry_checkpoint(engine)
 
 
@@ -194,6 +199,13 @@ def _restore_telemetry_checkpoint(engine: "Engine") -> None:
                 pass
         if version_found and fresh_checked:
             break
+    audit = classify_hydraulic_rows(rows)
+    for row, classification in zip(reversed(rows), reversed(audit)):
+        if classification["hydraulic_quality"] != "verified":
+            continue
+        parts = row.get("telemetry_version", "").split("|")
+        engine.seed_hydraulic_telemetry_versions(parts[1], parts[3])
+        break
 
 
 def _save_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
@@ -205,6 +217,8 @@ def _save_state(engine: "Engine", notifier: "NtfyNotifier") -> None:
         "zero_flow_streak": engine._zero_flow_streak,
         "last_trend_check": _last_trend_check,
         "last_telemetry_version": engine._last_telemetry_version,
+        "last_pressure_telemetry_version": engine._last_pressure_telemetry_version,
+        "last_flow_telemetry_version": engine._last_flow_telemetry_version,
         "last_fresh_telemetry_at": _last_fresh_telemetry_at,
         "telemetry_stale_alert_sent": _telemetry_stale_alert_sent,
     }

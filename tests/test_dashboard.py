@@ -16,13 +16,16 @@ def test_restriction_uses_derived_clean_baseline_when_config_is_uncalibrated():
         html.index("function computeCleanSessionReferences(rows, valueForRow, percentile)")
     ]
     rows = [
-        {"gph": 1800, "ratio": 0.20, "mode": "low", "rowBaseline": None}
-        for _ in range(5)
-    ] + [{"gph": 1800, "ratio": 0.30, "mode": "low", "rowBaseline": None}]
+        {"gph": 1800, "ratio": 0.20, "mode": "low", "rowBaseline": None,
+         "telemetryVersion": f"d|{n}|w|{n}"}
+        for n in range(1, 6)
+    ] + [{"gph": 1800, "ratio": 0.30, "mode": "low", "rowBaseline": None,
+           "telemetryVersion": "d|6|w|6"}]
     script = "\n".join([
         "let dashCfg = {speeds: {low: {baseline: null, alertPct: 100, emergencyPct: 300}}};",
         helpers,
         f"const rows = {json.dumps(rows)};",
+        "classifyHydraulicRows(rows);",
         "const baselines = computeCleanBaselines(rows);",
         "annotateRows(rows, baselines);",
         "console.log(JSON.stringify(rows.at(-1)));",
@@ -54,8 +57,8 @@ def test_hero_uses_last_fresh_alert_level_when_latest_snapshot_is_duplicate():
     script = "\n".join([
         helper,
         "const rows = [",
-        "  { telemetryQuality: 'fresh', level: 'warn' },",
-        "  { telemetryQuality: 'duplicate', level: 'normal' },",
+        "  { hydraulicQuality: 'verified', level: 'warn' },",
+        "  { hydraulicQuality: 'mixed_or_stale', level: 'normal' },",
         "];",
         "console.log(latestFreshAlertLevel(rows));",
     ])
@@ -120,6 +123,8 @@ def test_derived_dashboard_metrics_require_verified_program_context():
     html = DASHBOARD.read_text()
 
     parser = html[html.index("function parseCSV(text)"):html.index("// ── Desktop alerts")]
+    assert "classifyHydraulicRows(allRows);" in parser
+    assert "freshRows = allRows.filter(r => r.hydraulicQuality === 'verified');" in parser
     assert "trustedRows = freshRows.filter(hasVerifiedProgramContext);" in parser
     assert "computeCleanBaselines(trustedRows)" in parser
 
@@ -159,7 +164,7 @@ def test_pressure_chart_uses_explicit_psi_telemetry_between_flow_and_restriction
     assert 'id="chart-restriction"' in html
     assert html.index('id="chart-flow"') < html.index('id="chart-pressure"') < html.index('id="chart-restriction"')
     assert "pressurePsi: Number.isFinite(rawPressurePsi) ? rawPressurePsi : null," in html
-    assert "const pressurePsi = rows.map(r => r.pressurePsi);" in html
+    assert "const pressurePsi = rows.map(r => r.hydraulicQuality === 'verified' ? r.pressurePsi : null);" in html
     assert "charts.pressure = new Chart(document.getElementById('chart-pressure')" in html
 
 

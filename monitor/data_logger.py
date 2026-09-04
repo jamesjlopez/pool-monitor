@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from .types import EngineResult, PumpStatus
+from .hydraulic_quality import write_hydraulic_audit
 
 log = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ class DataLogger:
         with open(self._path, "a", newline="") as f:
             csv.writer(f).writerow(row)
         self._prune()
+        write_hydraulic_audit(self._path)
 
     def _prune(self) -> None:
         cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).isoformat(timespec="seconds")
