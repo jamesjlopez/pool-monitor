@@ -10,6 +10,7 @@ from monitor.types import AlertLevel, PumpStatus
 
 # Calibrated config: baseline ratios set so we can exercise threshold logic
 CALIBRATED_CONFIG = {
+    "emergency_shutoff": {"pressure_mapping_verified": True},
     "thresholds": {
         "startup_grace_seconds": 120,
         "consecutive_readings_required": 3,
@@ -37,6 +38,7 @@ CALIBRATED_CONFIG = {
 
 # Uncalibrated config: baseline_watts_per_gph = null → uses flow heuristics
 UNCALIBRATED_CONFIG = {
+    "emergency_shutoff": {"pressure_mapping_verified": True},
     "thresholds": {
         "startup_grace_seconds": 120,
         "consecutive_readings_required": 3,
@@ -184,6 +186,19 @@ class TestNormalOperation:
 
 
 class TestWarnThreshold:
+    def test_changed_device_snapshot_with_stale_hydraulic_fields_is_not_an_alert(self):
+        engine = Engine(CALIBRATED_CONFIG)
+        first = PumpStatus(rpm=1050, power_watts=148, flow_gph=1820, is_running=True,
+                           pressure_psi=12.5, pressure_telemetry_version="p1", flow_telemetry_version="f1")
+        mixed = PumpStatus(rpm=1050, power_watts=149, flow_gph=1820, is_running=True,
+                           pressure_psi=12.5, pressure_telemetry_version="p1", flow_telemetry_version="f1")
+
+        assert engine.process(first).telemetry_fresh
+        result = engine.process(mixed)
+        assert not result.telemetry_fresh
+        assert result.level == AlertLevel.NORMAL
+        assert "pressure/flow telemetry timestamp unchanged" in result.reason
+
     def test_direct_pressure_warns_even_when_ratio_is_normal(self):
         engine = Engine(CALIBRATED_CONFIG)
         results = feed_n(engine, make_status(pressure=12.5), 3)

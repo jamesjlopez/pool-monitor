@@ -1317,10 +1317,15 @@ function setHeroFromData(d) {
   const latestG = d.gpm[d.gpm.length - 1] ?? 0;
   const lr      = d.latestRow;
   const liveLevel = latestFreshAlertLevel(d.rows);
+  const hydraulicsFresh = lr?.telemetryQuality !== 'duplicate';
 
   // Status state
   let word, head, detail, status, glow;
-  if (liveLevel === 'critical') {
+  if (!hydraulicsFresh) {
+    word='Waiting'; head='Hydraulic readings are stale';
+    detail='Pentair has not supplied newer pressure and flow data, so current hydraulic values and alerts are paused.';
+    status=C.amber; glow='rgba(255,159,10,0.20)';
+  } else if (liveLevel === 'critical') {
     word='Action needed'; head='Pump pressure is critically high';
     detail='The live monitor reported a critical hydraulic condition. Stop and inspect the circulation path.';
     status=C.red; glow='rgba(255,69,58,0.22)';
@@ -1345,7 +1350,7 @@ function setHeroFromData(d) {
   document.getElementById('status-word').textContent = word;
   document.getElementById('status-headline').textContent = head;
   document.getElementById('status-detail').textContent = detail;
-  document.getElementById('hero-restriction').textContent = (nowPct>=0?'+':'') + Math.round(nowPct) + '%';
+  document.getElementById('hero-restriction').textContent = hydraulicsFresh ? (nowPct>=0?'+':'') + Math.round(nowPct) + '%' : '—';
   document.documentElement.style.setProperty('--status', status);
   document.getElementById('hero').style.setProperty('--status-glow', glow);
 
@@ -1368,7 +1373,7 @@ function setHeroFromData(d) {
   }
 
   // Stat chips
-  document.getElementById('st-now').innerHTML  = (nowPct>=0?'+':'') + Math.round(nowPct) + '<small>%</small>';
+  document.getElementById('st-now').innerHTML  = hydraulicsFresh ? (nowPct>=0?'+':'') + Math.round(nowPct) + '<small>%</small>' : '—';
   document.getElementById('st-peak').innerHTML = (peakPct>=0?'+':'') + Math.round(peakPct) + '<small>%</small>';
   const half = d.restriction.slice(Math.floor(d.restriction.length / 2));
   document.getElementById('st-trend').textContent = (half[half.length-1] > half[0]) ? 'Rising' : 'Easing';
@@ -1379,7 +1384,7 @@ function setHeroFromData(d) {
   document.getElementById('st-gpm').innerHTML   = latestG + '<small>GPM</small>';
   const flowRef = d.flowReference[d.flowReference.length - 1];
   const flowLoss = d.flowLoss[d.flowLoss.length - 1];
-  document.getElementById('st-flow-now').innerHTML = latestG + '<small>GPM</small>';
+  document.getElementById('st-flow-now').innerHTML = hydraulicsFresh ? latestG + '<small>GPM</small>' : '—';
   document.getElementById('st-flow-ref').innerHTML = flowRef !== null
     ? (flowRef / 60).toFixed(1) + '<small>GPM</small>' : '—';
   document.getElementById('st-flow-loss').innerHTML = flowLoss !== null
@@ -1387,7 +1392,7 @@ function setHeroFromData(d) {
   const latestPressure = d.pressurePsi.at(-1);
   const pressureRef = d.pressureReference.at(-1);
   const pressureRise = d.pressureRise.at(-1);
-  document.getElementById('st-pressure-now').innerHTML = Number.isFinite(latestPressure)
+  document.getElementById('st-pressure-now').innerHTML = hydraulicsFresh && Number.isFinite(latestPressure)
     ? latestPressure.toFixed(2) + '<small> PSI</small>' : '—';
   document.getElementById('st-pressure-ref').innerHTML = Number.isFinite(pressureRef)
     ? pressureRef.toFixed(2) + '<small> PSI</small>' : '—';

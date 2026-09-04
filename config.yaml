@@ -17,8 +17,7 @@ thresholds:
   startup_grace_seconds: 120          # suppress alerts for 2 min after pump starts
   consecutive_readings_required: 3    # require N readings in a row before alerting
 
-  # Pressure notifications are active. Flow-loss alerts remain disabled until a
-  # manually confirmed clean reading is recorded for each active program.
+  # Direct pressure alerts remain disabled until s17 is calibrated to the analog gauge.
 
   low_speed:
     # Low speed program runs at 70.5% motor speed.
@@ -50,7 +49,7 @@ ntfy:
 
 emergency_shutoff:
   enabled: false                     # re-enable only after a raw Pentair field capture confirms pressure mapping
-  pressure_mapping_verified: false   # defense in depth: enabled alone cannot stop the pump
+  pressure_mapping_verified: false   # also gates direct PSI alerts until gauge calibration
   consecutive_required: 1            # 1 confirmed CRITICAL output = shutoff (window itself requires 3 readings)
   delay_seconds: 30
 

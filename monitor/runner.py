@@ -58,6 +58,7 @@ from .notifier import NtfyNotifier
 from .recalibrator import Recalibrator
 from .trend import TrendAnalyzer
 from .types import AlertLevel, EngineResult, PumpStatus
+from .suction import SuctionRestrictionDetector
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_CONFIG    = PROJECT_ROOT / "config.yaml"
@@ -391,6 +392,7 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
     engine = Engine(config)
     notifier = NtfyNotifier(config)
     recalibrator = Recalibrator(config_path, RECAL_LOG_FILE)
+    suction_detector = SuctionRestrictionDetector()
     metrics_path = PROJECT_ROOT / "logs" / "metrics.csv"
     trend_analyzer = TrendAnalyzer(metrics_path)
     data_logger = None if dry_run else DataLogger(metrics_path)
@@ -416,6 +418,10 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
                 dry_run=dry_run, data_logger=data_logger, recalibrator=recalibrator,
                 status=status,
             )
+            if result and result.telemetry_fresh and status:
+                warning = suction_detector.observe(status)
+                if warning and not dry_run:
+                    notifier.send_info("Pool Flow Change — Check Baskets", warning.message)
 
             # Fast confirmation: first elevated reading triggers 2 more polls at short
             # intervals to confirm before the next normal poll — catches transients.

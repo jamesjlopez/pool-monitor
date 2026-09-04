@@ -312,6 +312,8 @@ def _parse_status(device_data: dict) -> PumpStatus:
         motor_speed_pct=motor_speed_pct,
         speed_mode=speed_mode if is_running else "off",
         telemetry_version=telemetry_version or None,
+        pressure_telemetry_version=str(fields.get("s17", {}).get("timestamp")) if fields.get("s17", {}).get("timestamp") is not None else None,
+        flow_telemetry_version=str(fields.get("s26", {}).get("timestamp")) if fields.get("s26", {}).get("timestamp") is not None else None,
         raw={
             "deviceId": device_data.get("deviceId"),
             "prog_idx": prog_idx,

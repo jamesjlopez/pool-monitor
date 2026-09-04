@@ -27,6 +27,8 @@ class PumpStatus:
     timestamp: float = field(default_factory=time.time)
     speed_mode: str = ""   # "low" | "high" | "unknown" | "off"
     telemetry_version: Optional[str] = None
+    pressure_telemetry_version: Optional[str] = None
+    flow_telemetry_version: Optional[str] = None
     raw: dict = field(default_factory=dict)
 
     def __post_init__(self):

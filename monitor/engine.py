@@ -37,6 +37,9 @@ class Engine:
         # confirmation polls must not turn one unchanged cloud snapshot into
         # several independent observations.
         self._last_telemetry_version: Optional[str] = None
+        self._last_pressure_telemetry_version: Optional[str] = None
+        self._last_flow_telemetry_version: Optional[str] = None
+        self._pressure_mapping_verified = config.get("emergency_shutoff", {}).get("pressure_mapping_verified", False)
 
     # ------------------------------------------------------------------
     # Public API
@@ -55,6 +58,10 @@ class Engine:
     def seed_telemetry_version(self, version: Optional[str]) -> None:
         """Restore the most recently evaluated cloud snapshot across --once runs."""
         self._last_telemetry_version = version
+
+    def seed_hydraulic_telemetry_versions(self, pressure: Optional[str], flow: Optional[str]) -> None:
+        self._last_pressure_telemetry_version = pressure
+        self._last_flow_telemetry_version = flow
 
     def mark_pump_start(self):
         """Call when the pump transitions from off→on to start the grace period."""
@@ -112,6 +119,9 @@ class Engine:
                 speed_mode=status.speed_mode,
                 pending_elevated=True,
             )
+
+        if not self._hydraulics_are_fresh(status):
+            return EngineResult(AlertLevel.NORMAL, "Pentair pressure/flow telemetry timestamp unchanged — awaiting newer hydraulic data", speed_mode=status.speed_mode, telemetry_fresh=False)
 
         raw_result = self._evaluate(status)
 
@@ -173,6 +183,18 @@ class Engine:
         key = "low_speed" if speed_mode == "low" else "high_speed"
         return self._cfg[key]
 
+    def _hydraulics_are_fresh(self, status: PumpStatus) -> bool:
+        pressure, flow = status.pressure_telemetry_version, status.flow_telemetry_version
+        if pressure is None or flow is None:
+            return True
+        if self._last_pressure_telemetry_version is None or self._last_flow_telemetry_version is None:
+            self.seed_hydraulic_telemetry_versions(pressure, flow)
+            return True
+        if pressure == self._last_pressure_telemetry_version or flow == self._last_flow_telemetry_version:
+            return False
+        self.seed_hydraulic_telemetry_versions(pressure, flow)
+        return True
+
     def _zero_telemetry_reason(self, status: PumpStatus) -> str:
         snapshot = status.raw.get("fields_snapshot", {})
         appuse = snapshot.get("appuse")
@@ -209,7 +231,7 @@ class Engine:
 
         direct_signals = []
         pressure = status.pressure_psi
-        if pressure is not None:
+        if pressure is not None and self._pressure_mapping_verified:
             emergency_psi = scfg.get("emergency_psi")
             alert_psi = scfg.get("alert_psi")
             if emergency_psi is not None and pressure >= emergency_psi:
