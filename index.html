@@ -1310,14 +1310,32 @@ function latestFreshAlertLevel(rows) {
   return rows.at(-1)?.level;
 }
 
+// A repeated poll is not a new observation, but its verified source pair can
+// remain usable until it expires. Never carry values across a partial update
+// or an operating-program change. Historical classification stays strict.
+function currentHydraulicIndex(rows, now = Date.now()) {
+  const latest = rows.at(-1);
+  const index = rows.findLastIndex(r => r.hydraulicQuality === 'verified');
+  if (!latest || index < 0) return -1;
+  const verified = rows[index];
+  const parts = (latest.telemetryVersion || '').split('|');
+  const accepted = (verified.telemetryVersion || '').split('|');
+  if (parts.length !== 4 || parts[1] !== accepted[1] || parts[3] !== accepted[3]) return -1;
+  if (['mode', 'activeProgram', 'activeReference', 'activeSetpoint', 'gph', 'pressurePsi']
+      .some(key => latest[key] !== verified[key])) return -1;
+  const age = now / 1000 - Math.min(Number(parts[1]), Number(parts[3]));
+  return Number.isFinite(age) && age >= 0 && age < dashCfg.staleAfterSeconds ? index : -1;
+}
+
 function setHeroFromData(d) {
-  const nowPct  = d.restriction[d.restriction.length - 1] ?? 0;
+  const hydraulicIndex = currentHydraulicIndex(d.rows);
+  const nowPct  = d.restriction[hydraulicIndex] ?? 0;
   const peakPct = Math.max(...d.restriction);
   const latestW = d.watts[d.watts.length - 1] ?? 0;
-  const latestG = d.gpm[d.gpm.length - 1] ?? 0;
+  const latestG = d.gpm[hydraulicIndex] ?? 0;
   const lr      = d.latestRow;
   const liveLevel = latestFreshAlertLevel(d.rows);
-  const hydraulicsFresh = lr?.hydraulicQuality === 'verified';
+  const hydraulicsFresh = hydraulicIndex >= 0;
 
   // Status state
   let word, head, detail, status, glow;
@@ -1368,7 +1386,11 @@ function setHeroFromData(d) {
 
     const ageMin = (Date.now() - new Date(lr.ts)) / 60000;
     const updEl  = document.getElementById('hero-updated');
-    updEl.textContent = 'checked ' + relAge(lr.ts);
+    const sourceParts = (lr.telemetryVersion || '').split('|');
+    const sourceTime = Math.min(Number(sourceParts[1]), Number(sourceParts[3]));
+    updEl.textContent = 'checked ' + relAge(lr.ts) +
+      (Number.isFinite(sourceTime) && sourceTime > 0
+        ? ' · readings ' + relAge(new Date(sourceTime * 1000).toISOString()) : '');
     updEl.className   = 'updated' + (ageMin > STALE_MIN ? ' stale' : '');
   }
 
@@ -1381,17 +1403,17 @@ function setHeroFromData(d) {
   const extraW      = expectedW !== null ? latestW - expectedW : null;
 
   document.getElementById('st-watts').innerHTML = latestW + '<small>W</small>';
-  document.getElementById('st-gpm').innerHTML   = latestG + '<small>GPM</small>';
-  const flowRef = d.flowReference[d.flowReference.length - 1];
-  const flowLoss = d.flowLoss[d.flowLoss.length - 1];
+  document.getElementById('st-gpm').innerHTML   = hydraulicsFresh ? latestG + '<small>GPM</small>' : '—';
+  const flowRef = d.flowReference[hydraulicIndex] ?? null;
+  const flowLoss = d.flowLoss[hydraulicIndex] ?? null;
   document.getElementById('st-flow-now').innerHTML = hydraulicsFresh ? latestG + '<small>GPM</small>' : '—';
   document.getElementById('st-flow-ref').innerHTML = flowRef !== null
     ? (flowRef / 60).toFixed(1) + '<small>GPM</small>' : '—';
   document.getElementById('st-flow-loss').innerHTML = flowLoss !== null
     ? (flowLoss >= 0 ? '−' : '+') + Math.abs(flowLoss).toFixed(0) + '<small>%</small>' : '—';
-  const latestPressure = d.pressurePsi.at(-1);
-  const pressureRef = d.pressureReference.at(-1);
-  const pressureRise = d.pressureRise.at(-1);
+  const latestPressure = d.pressurePsi[hydraulicIndex];
+  const pressureRef = d.pressureReference[hydraulicIndex];
+  const pressureRise = d.pressureRise[hydraulicIndex];
   document.getElementById('st-pressure-now').innerHTML = hydraulicsFresh && Number.isFinite(latestPressure)
     ? latestPressure.toFixed(2) + '<small> PSI</small>' : '—';
   document.getElementById('st-pressure-ref').innerHTML = Number.isFinite(pressureRef)
@@ -1430,6 +1452,7 @@ function setHeroFromData(d) {
 function defaultDashboardConfig() {
   return {
     consecutiveReadingsRequired: 3,
+    staleAfterSeconds: 5400,
     speeds: {
       low:  { baseline: null, alertPct: 100, emergencyPct: 300 },
       high: { baseline: null, alertPct: 100, emergencyPct: 300 },
@@ -1451,7 +1474,14 @@ function parseDashboardConfig(text, cfg) {
   text.split('\n').forEach(rawLine => {
     const line = rawLine.split('#')[0].trimEnd();
     if (!line.trim()) return;
+    if (/^telemetry_health:\s*$/.test(line)) { section = 'telemetry_health'; speed = null; return; }
     if (/^thresholds:\s*$/.test(line)) { section = 'thresholds'; speed = null; return; }
+    if (/^\S/.test(line)) { section = ''; speed = null; return; }
+    if (section === 'telemetry_health') {
+      const stale = line.match(/^  stale_alert_after_seconds:\s*(\d+)/);
+      if (stale && +stale[1] > 0) cfg.staleAfterSeconds = +stale[1];
+      return;
+    }
     if (section !== 'thresholds') return;
 
     let m = line.match(/^  consecutive_readings_required:\s*([0-9.]+)/);
