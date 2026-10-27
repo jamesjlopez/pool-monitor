@@ -1,8 +1,14 @@
 # Pool Filter Monitor
 
-Automated iOS push notifications when your pool filter needs cleaning — before the pump burns out.
+Automated push notifications via ntfy when your pool filter needs cleaning — before the pump burns out.
 
-## Current return-flow monitoring (September 2026)
+![Pool dashboard showing 30 days of measured return flow, the same-program reference, maintenance markers, and current flow metrics](docs/images/return-flow-dashboard.jpg)
+
+*Actual dashboard data, captured October 27, 2026. The return-flow chart shows
+declining flow and recovery around maintenance events, alongside the estimated
+same-program reference (green dashed line).*
+
+## Current return-flow monitoring (October 2026)
 
 The dashboard focuses on return flow and pump-reported pressure. The old filter
 restriction proxy, daily cost, and extra-work charts have been removed, along
@@ -73,7 +79,7 @@ The pump has WiFi (via Pentair IntelliConnect adapter) and the Pentair Home iOS 
 
 This system polls the Pentair cloud API on a schedule and estimates filter pressure indirectly from the **watts-per-GPH efficiency ratio**. When the filter clogs, backpressure increases: the pump works harder (watts rise) while flow holds steady (flow-control mode) or drops (speed-control mode), causing the ratio to rise above a calibrated baseline.
 
-When the ratio exceeds configured thresholds, the system sends an iOS push notification via [ntfy](https://ntfy.sh). An optional emergency shutoff can turn the pump off via the API if pressure is dangerously high.
+When the ratio exceeds configured thresholds, the system sends a push notification via [ntfy](https://ntfy.sh). An optional emergency shutoff can turn the pump off via the API if pressure is dangerously high.
 
 ```
 Pentair cloud API  ──▶  Poll every 30 min (7am–9pm)  ──▶  Engine (ratio analysis)
@@ -82,7 +88,7 @@ Pentair cloud API  ──▶  Poll every 30 min (7am–9pm)  ──▶  Engine (
                                                      NORMAL              WARN / CRITICAL
                                                      (log)                    │
                                                                          ntfy push
-                                                                        (iOS phone)
+                                                                        (ntfy client)
 ```
 
 ## How It Works
@@ -109,7 +115,7 @@ The pump runs in **flow-control mode**: it adjusts RPM automatically to maintain
 - **Startup spike protection:** if the elevated reading occurred during pump priming, the 2-minute confirmation polls will come back normal and no alert is sent.
 - **120-second startup grace period** — all alerts suppressed for 2 minutes after the pump starts.
 - **30-minute cooldown** between repeat WARN alerts — CRITICAL always fires immediately.
-- WARN sends a high-priority iOS notification (⚠️); CRITICAL sends an urgent alert that bypasses silent mode (🚨).
+- WARN sends a high-priority notification (⚠️); CRITICAL sends an urgent alert that bypasses silent mode (🚨).
 - **Emergency shutoff:** if all 3 confirmation readings are CRITICAL, the pump is turned off via the API after a 30-second warning notification. A follow-up notification confirms the pump stopped (or instructs manual shutoff if the API call fails).
 
 ## Tech Stack
@@ -125,7 +131,20 @@ The pump runs in **flow-control mode**: it adjusts RPM automatically to maintain
 | Dashboard | Single-file HTML + [Chart.js 4.4](https://www.chartjs.org/) (no build step, no framework) |
 | Tests | pytest + pytest-mock (offline, fixture-based — no live pump required) |
 
-> **For designers:** the dashboard (`index.html`) is a standalone static file — plain HTML/CSS/JS, no React or bundler. The monitor backend is headless Python with no web server. Push alerts go to iOS via the ntfy app.
+> **For designers:** the dashboard (`index.html`) uses plain HTML/CSS/JS, with no React or bundler. Run `python -m monitor.dashboard_server 8081` to serve it with shared maintenance history. Push alerts go to ntfy clients on iOS, Android, or the web.
+
+## Working with coding agents
+
+[AGENTS.md](AGENTS.md) contains the shared project instructions. The small
+[CLAUDE.md](CLAUDE.md) import keeps them available in Claude Code sessions that
+do not load `AGENTS.md` directly. Claude Code supports both instruction formats;
+see its [instruction-file documentation](https://code.claude.com/docs/en/memory#agentsmd).
+
+The optional TypeSafe AI skill lives in `.agents/skills/typesafe-ai/`.
+`.claude/skills/typesafe-ai` links to that same directory for Claude Code
+discovery, so there is one maintained copy. Skills remain a supported
+[Claude Code feature](https://code.claude.com/docs/en/skills) based on the open
+Agent Skills format. They are development helpers, not runtime dependencies.
 
 ## Setup
 
@@ -146,7 +165,7 @@ The runner auto-loads `.env` on startup — no shell sourcing required.
 
 ### 3. Configure ntfy
 
-Install the [ntfy app](https://ntfy.sh) on your iPhone and subscribe to your topic. The default topic in `config.yaml` is `pool_monitor_project` — change it to something private.
+Install the [ntfy app for iOS or Android](https://docs.ntfy.sh/subscribe/phone/), or use the [web app](https://ntfy.sh/app), and subscribe to your topic. The default topic in `config.yaml` is `pool_monitor_project` — change it to something private.
 
 ### 4. Test notifications
 

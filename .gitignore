@@ -22,6 +22,7 @@ build/
 
 # Personal log data (pool readings, credentials, state)
 logs/*.log
+logs/*.log.*
 logs/*.csv
 logs/*.json
 logs/*/
