@@ -2,6 +2,67 @@
 
 Automated iOS push notifications when your pool filter needs cleaning — before the pump burns out.
 
+## Current return-flow monitoring (September 2026)
+
+The dashboard focuses on return flow and pump-reported pressure. The old filter
+restriction proxy, daily cost, and extra-work charts have been removed, along
+with ratio-based alerts and forecasts.
+
+Phone advisories and the dashboard use `dashboard_return_flow` in `config.yaml`:
+15% loss means watch, 25% means check for a restriction, and 40% means inspect
+promptly. Two independent hydraulic source updates must confirm the loss.
+References use the 90th-percentile flow from at least five verified readings at
+the same program, reference type, and setpoint in the retained 30-day log.
+These are recent observed references, not proof of a clean filter. Program
+changes do not erase comparisons; a three-day gap resets confirmation.
+
+Each program's successful alert is persisted in `logs/flow-alert-state.json`.
+Severity increases can notify sooner; unchanged conditions remind after 12 hours.
+Failures remain retryable, and delivery attempts appear in Recent alerts. Normal,
+retry, and single-poll execution all use the same check. Repeated cloud samples
+do not count as confirmations; samples older than 90 minutes are excluded.
+
+Pressure alerts remain available independently when `pressure_mapping_verified`
+is enabled after gauge calibration. Pressure-based shutoff remains disabled.
+Routine flow advisories do not trigger shutoff.
+
+As of October 1, `flow_safety` separately enables an emergency stop for a powered
+pump reporting **600 GPH (10 GPM) or less**, including zero flow. This is a
+conservative protective floor, not a calibrated diagnosis of air ingestion.
+Both flow and power must have explicit, valid source values and source timestamps
+no older than 10 minutes. Missing or stale data cannot initiate this stop.
+The existing 120-second grace period after an observed motor start allows priming.
+Outside that grace, the first qualifying sample sends the master-disable and
+program-stop commands without pressure calibration, a confirmation window, or
+the old 30-second warning delay. An urgent notification reports command acceptance
+or failure; acceptance is not physical verification that the motor stopped.
+Failed master-disable requests persist across restarts and are retried; successful
+disable requires manual re-enabling in the Pentair app. Commands and outcomes are
+recorded in `logs/shutoff.log` and the dashboard's notification history.
+
+The monitor polls every five minutes at :00/:05/:10/etc., with up to two extra
+two-minute confirmations for suspicious readings. Unchanged data does not add
+stale-retry requests. HTTP 429 responses pause telemetry requests for at least
+five minutes, increasing up to an hour for repeated rejections; a longer
+`Retry-After` is honored. A successful status response resets the backoff.
+Backoff is held in memory and resets when the monitor restarts. Emergency stop
+attempts remain available during telemetry backoff.
+
+**Pentair's hydraulic source readings
+have been updating roughly hourly**, so more polling does not provide continuous
+measurement. This safeguard cannot promise immediate detection or prevent damage
+between updates. Keep onboard dry-run/loss-of-prime protection enabled. The
+[October 1 incident analysis](docs/water-starvation-2026-10-01.md) records the
+evidence and remaining limitation.
+
+Open dashboards refresh data every five minutes and on returning to the tab.
+They also reload when the served HTML changes, deferring reload while the
+cleaning form is open. Existing tabs require one manual refresh to load this
+new update checker.
+
+The older setup and design notes below describe the original ratio-based design;
+the current behavior above supersedes those alert and chart descriptions.
+
 ## The Problem
 
 A Pentair IntelliFlo/Pro3 VSF pool pump runs on a schedule (low speed most of the day, high speed midday). Downstream is a filter canister with a physical pressure gauge. When leaves, seed pods, and debris clog the filter — or when wind fills the skimmer basket — backpressure rises and the pump overworks. Left unnoticed, this burns out the pump motor (already happened once).
@@ -246,3 +307,11 @@ After 3 fast-confirmed CRITICAL readings (~4 minutes of sustained extreme pressu
 ## License
 
 MIT
+
+### Maintenance history
+
+Use **Log maintenance** beneath return flow to record a filter-element rinse, bottom-of-filter-canister rinse, surface-skimmer basket emptying, or pump-basket emptying. The time uses your browser’s local timezone; the monitor stores UTC timestamps, action, optional notes, and recording time in `logs/maintenance.json`. Entries appear on the charts and in shared history across devices. Older browser-only cleaning entries remain visible on that browser as unspecified cleanings.
+
+Rinse the bottom of the filter canister whenever cleaning the cartridge. During seed-pod season, inspect monthly to establish how quickly debris returns. On October 16, 2026, James reported removing roughly an inch of mulch-like seed pods and sediment around the bottom; it had not been cleaned by him since buying the house in June 2024, and the previous cleaning date is unknown. This is a starting inspection interval, not a measured buildup rate.
+
+The dashboard must run with `python -m monitor.dashboard_server 8081` to save entries. Failed saves keep the form open for retry. These records establish labels for future flow-pattern analysis; they do not yet train a diagnosis or forecast, or enable automatic pump shutoff.

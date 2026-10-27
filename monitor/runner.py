@@ -59,7 +59,9 @@ from .notifier import NtfyNotifier
 from .recalibrator import Recalibrator
 from .trend import TrendAnalyzer
 from .types import AlertLevel, EngineResult, PumpStatus
-from .suction import SuctionRestrictionDetector
+from .return_flow import check_return_flow
+from .profiles import is_high_program_low_speed_profile
+from .flow_safety import protect_flow
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_CONFIG    = PROJECT_ROOT / "config.yaml"
@@ -248,6 +250,17 @@ def run_once(
     )
 
     status = status or client.get_status()
+    safety_result = protect_flow(
+        status, client, notifier, config, PROJECT_ROOT / "logs",
+        dry_run=dry_run, startup_grace=engine._in_grace_period(),
+    )
+    if safety_result is not None:
+        if status is not None:
+            _log_result(safety_result, status)
+        if data_logger is not None and status is not None:
+            data_logger.log(status, safety_result)
+        return safety_result
+
     if status is None:
         msg = "Could not get pump status — API unreachable or auth failure"
         log.warning(msg)
@@ -260,6 +273,12 @@ def run_once(
     _track_telemetry_freshness(result, notifier, config, dry_run)
     if data_logger is not None:
         data_logger.log(status, result)
+        if (not dry_run and status.is_running and status.power_watts > 0
+                and status.flow_gph > 0 and status.speed_mode in ("low", "high")
+                and not engine._in_grace_period()
+                and not is_high_program_low_speed_profile(status)):
+            check_return_flow(data_logger._path, PROJECT_ROOT / "logs" / "flow-alert-state.json",
+                              config, notifier, _record_notification)
 
     # Recalibration candidates are recorded for review. They only update the active
     # baseline when a caller explicitly enables Recalibrator(auto_apply=True).
@@ -388,12 +407,11 @@ def _check_trend(
 def _sleep_until_next_slot(interval: int) -> None:
     """Sleep until the next wall-clock-aligned poll slot.
 
-    Aligns to boundaries that are offset half an interval from the top of the hour.
-    For a 1800s (30-min) interval this puts polls at H:15 and H:45.
+    Five-minute polls run at :00, :05, :10, etc. Preserve the legacy :15/:45
+    alignment when configured for a 30-minute interval.
     """
     now = time.time()
-    # offset = interval/2 shifts the slot from H:00/H:30 → H:15/H:45
-    offset = interval // 2
+    offset = 900 if interval == 1800 else 0
     elapsed_in_period = (now - offset) % interval
     sleep_for = interval - elapsed_in_period
     log.debug("Sleeping %.0fs until next aligned poll slot", sleep_for)
@@ -406,9 +424,7 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
     engine = Engine(config)
     notifier = NtfyNotifier(config)
     recalibrator = Recalibrator(config_path, RECAL_LOG_FILE)
-    suction_detector = SuctionRestrictionDetector()
     metrics_path = PROJECT_ROOT / "logs" / "metrics.csv"
-    trend_analyzer = TrendAnalyzer(metrics_path)
     data_logger = None if dry_run else DataLogger(metrics_path)
     interval = config["pump"].get("poll_interval_seconds", 1800)
     if not dry_run:
@@ -423,20 +439,18 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
 
             # Detect pump on→off / off→on transitions
             if status is not None:
-                if prev_running is False and status.is_running:
+                # Pentair can leave s3=running after its master switch is OFF;
+                # use motor workload too so a manual restart gets priming grace.
+                running = status.is_running and status.power_watts > 0
+                if prev_running is False and running:
                     engine.mark_pump_start()
-                prev_running = status.is_running
+                prev_running = running
 
             result = run_once(
                 client, engine, notifier, config,
                 dry_run=dry_run, data_logger=data_logger, recalibrator=recalibrator,
                 status=status,
             )
-            if result and result.telemetry_fresh and status:
-                warning = suction_detector.observe(status)
-                if warning and not dry_run:
-                    notifier.send_info("Pool Flow Change — Check Baskets", warning.message)
-
             # Fast confirmation: first elevated reading triggers 2 more polls at short
             # intervals to confirm before the next normal poll — catches transients.
             if result and result.pending_elevated and result.telemetry_fresh:
@@ -458,10 +472,6 @@ def main_loop(config: dict, dry_run: bool = False, config_path: Path = DEFAULT_C
                 data_logger=data_logger, recalibrator=recalibrator,
             )
 
-            _check_trend(
-                trend_analyzer, notifier, config, dry_run,
-                active_mode=result.speed_mode if result else None,
-            )
             if not dry_run:
                 _save_state(engine, notifier)
 
@@ -627,7 +637,6 @@ def main():
         engine = Engine(config)
         notifier = NtfyNotifier(config)
         recalibrator = Recalibrator(args.config, RECAL_LOG_FILE)
-        trend_analyzer = TrendAnalyzer(metrics_path)
         if not args.dry_run:
             _load_state(engine, notifier)
         data_logger = None if args.dry_run else DataLogger(metrics_path)
@@ -652,11 +661,6 @@ def main():
                 )
                 if result is None or not result.pending_elevated:
                     break
-
-        _check_trend(
-            trend_analyzer, notifier, config, args.dry_run,
-            active_mode=result.speed_mode if result else None,
-        )
 
         if not args.dry_run:
             _save_state(engine, notifier)

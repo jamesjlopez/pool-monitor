@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-dashboard-version="2026-10-16-canister-rinse-1">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -513,12 +513,12 @@ body {
         <div class="hero-detail" id="status-detail">Fetching the latest readings from the local data file.</div>
         <div class="hero-forecast" id="hero-forecast">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-          <span class="hf-text">Estimating next cleaning…</span>
+          <span class="hf-text">Checking return flow…</span>
         </div>
       </div>
       <div class="hero-metric">
-        <div class="val" id="hero-restriction">—</div>
-        <div class="lbl">restriction now</div>
+        <div class="val" id="hero-flow-loss">—</div>
+        <div class="lbl">return flow loss</div>
         <div class="updated" id="hero-updated">loading…</div>
       </div>
     </div>
@@ -546,7 +546,7 @@ body {
               <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
             </button>
           </div>
-          <div class="widget-eyebrow">An independent check on the water you can feel at the return</div>
+          <div class="widget-eyebrow">The main signal for status and phone alerts</div>
         </div>
         <div class="legend" id="legend-flow"></div>
       </div>
@@ -554,8 +554,9 @@ body {
         <div class="tech-note-inner">
           <b>Clean-flow reference</b> — the 90th-percentile flow seen for the same active
           program, reference type, and setpoint. Low- and high-speed sessions therefore have
-          separate clean references. This is diagnostic: a falling line shows lost return flow
-          even if the watts/GPH alert baseline has become stale.
+          separate clean references, learned from at least five verified readings. The top status
+          uses the percentage lost from this reference, confirmed across two fresh readings for the same program.
+          This is an estimated clean reference; low flow can also mean a blocked basket or valve issue.
         </div>
       </div>
       <div class="chart-wrap med"><canvas id="chart-flow"></canvas></div>
@@ -563,6 +564,39 @@ body {
         <div class="stat"><div class="k">Flow now</div><div class="v" id="st-flow-now">—</div></div>
         <div class="stat"><div class="k">Clean reference</div><div class="v" id="st-flow-ref">—</div></div>
         <div class="stat"><div class="k">Flow loss</div><div class="v" id="st-flow-loss">—</div></div>
+      </div>
+      <div class="widget-actions">
+        <button class="log-cleaning-btn" id="log-cleaning-open" type="button">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Log maintenance
+        </button>
+      </div>
+      <div class="cleaning-form" id="cleaning-form" hidden>
+        <div class="cleaning-form-inner">
+          <label class="cleaning-label">Action
+            <select id="cleaning-kind" class="cleaning-input">
+              <option value="filter_element">Rinsed filter element</option>
+              <option value="filter_canister">Rinsed bottom of filter canister</option>
+              <option value="surface_skimmer">Emptied surface skimmer basket</option>
+              <option value="pump_basket">Emptied pump basket (before pump)</option>
+            </select>
+          </label>
+          <label class="cleaning-label">
+            Date &amp; time
+            <input type="datetime-local" id="cleaning-dt" class="cleaning-input">
+          </label>
+          <label class="cleaning-label">Notes (optional)
+            <input id="cleaning-notes" class="cleaning-input" maxlength="1000" placeholder="e.g. basket half full of leaves">
+          </label>
+          <button class="cleaning-save" id="cleaning-save" type="button">Save</button>
+          <button class="cleaning-cancel" id="cleaning-cancel" type="button">Cancel</button>
+        </div>
+        <p id="cleaning-error" role="alert"></p>
+      </div>
+      <div style="padding: 0 20px 16px">
+        <p class="row-time">Rinse the bottom of the canister whenever you clean the cartridge. During seed-pod season, inspect monthly to learn how quickly debris returns.</p>
+        <p id="maintenance-status" role="status">Loading maintenance history…</p>
+        <div id="maintenance-history"></div>
       </div>
     </section>
 
@@ -595,107 +629,6 @@ body {
       </div>
     </section>
 
-    <!-- Filter restriction (derived proxy) -->
-    <section class="widget span-2">
-      <div class="widget-head">
-        <div class="widget-titles">
-          <div class="widget-title">Filter restriction
-            <button class="info-btn" type="button" aria-expanded="false" data-info="info-restriction" aria-label="What is this?">
-              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
-            </button>
-          </div>
-          <div class="widget-eyebrow">How clogged the filter is, vs. a fresh-clean baseline</div>
-        </div>
-        <div class="legend" id="legend-restriction"></div>
-      </div>
-      <div class="tech-note" id="info-restriction">
-        <div class="tech-note-inner">
-          <b>Hydraulic restriction proxy</b> — percentage above the current clean-filter baseline.
-          Derived from the W/GPH efficiency ratio (watts per gallon-per-hour). Higher = more
-          resistance = dirtier filter. <b>Alert</b> fires at +100%, <b>Emergency</b> at +300%.
-        </div>
-      </div>
-      <div class="chart-wrap tall"><canvas id="chart-restriction"></canvas></div>
-      <div class="statline">
-        <div class="stat"><div class="k">Now</div><div class="v" id="st-now">—</div></div>
-        <div class="stat"><div class="k">Peak (range)</div><div class="v" id="st-peak">—</div></div>
-        <div class="stat"><div class="k">Clean baseline</div><div class="v" id="st-baseline">—</div></div>
-        <div class="stat"><div class="k">Trend</div><div class="v" id="st-trend">—</div></div>
-      </div>
-      <div class="widget-actions">
-        <button class="log-cleaning-btn" id="log-cleaning-open" type="button">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          Log a cleaning
-        </button>
-      </div>
-      <div class="cleaning-form" id="cleaning-form" hidden>
-        <div class="cleaning-form-inner">
-          <label class="cleaning-label">
-            Date &amp; time of cleaning
-            <input type="datetime-local" id="cleaning-dt" class="cleaning-input">
-          </label>
-          <button class="cleaning-save" id="cleaning-save" type="button">Save</button>
-          <button class="cleaning-cancel" id="cleaning-cancel" type="button">Cancel</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Energy cost -->
-    <section class="widget">
-      <div class="widget-head">
-        <div class="widget-titles">
-          <div class="widget-title">Daily running cost
-            <button class="info-btn" type="button" aria-expanded="false" data-info="info-energy" aria-label="What is this?">
-              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
-            </button>
-          </div>
-          <div class="widget-eyebrow">Extra daily cost from filter clog — $0 means running clean</div>
-        </div>
-        <div class="legend" id="legend-energy"></div>
-      </div>
-      <div class="tech-note" id="info-energy">
-        <div class="tech-note-inner">
-          <b>Extra daily cost</b> = watts above the per-speed clean baseline × hours × $0.12/kWh.
-          Only accumulates on readings that crossed the alert threshold — money a timely filter clean would have saved.
-          Today is excluded since the day is incomplete. Update <code>KWH_RATE</code> in this file to match your rate.
-        </div>
-      </div>
-      <div class="chart-wrap med"><canvas id="chart-energy"></canvas></div>
-      <div class="statline">
-        <div class="stat"><div class="k">Avg extra / day</div><div class="v" id="st-avgcost">—</div></div>
-        <div class="stat"><div class="k">Total wasted</div><div class="v" id="st-waste">—</div></div>
-      </div>
-    </section>
-
-    <!-- Power & flow -->
-    <section class="widget">
-      <div class="widget-head">
-        <div class="widget-titles">
-          <div class="widget-title">Extra pump work
-            <button class="info-btn" type="button" aria-expanded="false" data-info="info-power" aria-label="What is this?">
-              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="8" r="1.1" fill="currentColor"/></svg>
-            </button>
-          </div>
-          <div class="widget-eyebrow">Watts above the clean-filter baseline — 0 means no extra work</div>
-        </div>
-        <div class="legend" id="legend-power"></div>
-      </div>
-      <div class="tech-note" id="info-power">
-        <div class="tech-note-inner">
-          <b>Extra watts</b> = actual power draw minus expected for a clean filter at that flow rate.
-          Expected is the 10th-percentile W/GPH ratio per 200-GPH flow bucket across all history,
-          so it adapts to each speed program independently. The line sits near 0 when clean, rises
-          as the filter clogs — unaffected by speed-program switches that used to dominate the chart.
-        </div>
-      </div>
-      <div class="chart-wrap med"><canvas id="chart-power"></canvas></div>
-      <div class="statline">
-        <div class="stat"><div class="k">Extra now</div><div class="v" id="st-extra-watts">—</div></div>
-        <div class="stat"><div class="k">Actual now</div><div class="v" id="st-watts">—</div></div>
-        <div class="stat"><div class="k">Flow now</div><div class="v" id="st-gpm">—</div></div>
-      </div>
-    </section>
-
     <!-- Recent alerts -->
     <section class="widget">
       <div class="widget-head">
@@ -723,7 +656,7 @@ body {
   </div>
 
   <div class="foot">
-    Updates every 5&nbsp;min &middot; Local-only, no cloud &middot; <a href="https://github.com" id="github-link">View on GitHub</a>
+    Data updates every 5&nbsp;min &middot; Dashboard updates automatically &middot; <a href="https://github.com" id="github-link">View on GitHub</a>
   </div>
 
 </div>
@@ -737,8 +670,6 @@ body {
    ============================================================ */
 
 // ── User-configurable ────────────────────────────────────────
-const KWH_RATE   = 0.12;   // $/kWh — update to match your rate
-const POLL_HRS   = 0.5;    // each reading = 30 minutes of pump time
 const STALE_MIN  = 45;     // warn if last reading is older than this
 const REFRESH_MS = 5 * 60 * 1000;
 const MAX_ALERTS = 10;
@@ -763,7 +694,6 @@ const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue"
 // ── State ────────────────────────────────────────────────────
 let allRows           = [];
 let freshRows         = [];
-let cleanBaselines    = {};
 let cleanFlowReferences = {};
 let cleanPressureReferences = {};
 let dashCfg           = defaultDashboardConfig();
@@ -813,89 +743,6 @@ function gradient(ctx, area, hex, a1, a2) {
 function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`;
-}
-
-// ── Forecast ─────────────────────────────────────────────────
-function median(values) {
-  const sorted = [...values].sort((a,b) => a-b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
-}
-
-function forecastSamples(d) {
-  const mode = d.latestRow?.mode;
-  if (mode !== 'low' && mode !== 'high') return [];
-
-  // A cleaning trend belongs to one pump program.  Summarizing each day with a
-  // median prevents retry polls and a short-lived telemetry spike from getting
-  // extra weight in the forecast.
-  const byDay = {};
-  d.rows.forEach(row => {
-    if (row.mode !== mode || !Number.isFinite(row.pct)) return;
-    (byDay[row.ts.slice(0, 10)] ||= []).push(row.pct);
-  });
-  const daily = Object.entries(byDay)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([day, values]) => ({ day: new Date(day + 'T12:00:00'), pct: median(values) }));
-  const isolated = daily.filter((sample, i) => {
-    if (i === 0 || i === daily.length - 1) return true;
-    const previous = daily[i - 1].pct;
-    const following = daily[i + 1].pct;
-    return Math.abs(sample.pct - median([previous, following])) <= 15 ||
-      Math.abs(following - previous) > 15;
-  });
-  const confirmed = isolated.slice(0, 3);
-  for (let i=3; i<isolated.length; i++) {
-    const sample = isolated[i];
-    const recent = confirmed.slice(-3).map(s => s.pct);
-    if (Math.abs(sample.pct - median(recent)) <= 15) {
-      confirmed.push(sample);
-      continue;
-    }
-    const next = isolated[i + 1];
-    if (next && Math.abs(next.pct - sample.pct) <= 15) {
-      confirmed.push(sample, next);
-      i++;
-    }
-  }
-  return confirmed;
-}
-
-function theilSen(xs, ys) {
-  const slopes = [];
-  for (let i=0; i<xs.length; i++) {
-    for (let j=i+1; j<xs.length; j++) {
-      if (xs[j] !== xs[i]) slopes.push((ys[j] - ys[i]) / (xs[j] - xs[i]));
-    }
-  }
-  if (!slopes.length) return [0, median(ys)];
-  const slope = median(slopes);
-  return [slope, median(ys.map((y, i) => y - slope * xs[i]))];
-}
-
-function predictClean(d) {
-  const samples = forecastSamples(d);
-  if (samples.length < 4) return { none: true };
-  const xs = samples.map(s => (s.day - samples[0].day) / 86400000);
-  const ys = samples.map(s => s.pct);
-  const [slope, intercept] = theilSen(xs, ys);
-  const now = ys[ys.length - 1];
-  if (now >= 100) return { overdue: true };
-  if (slope < 1.2) return { none: true };
-  const fittedNow = slope * xs[xs.length - 1] + intercept;
-  const daysTo = (100 - fittedNow) / slope;
-  if (daysTo <= 0) return { none: true };
-  if (daysTo > 45) return { none: true };
-  return { target: new Date(+d.now + daysTo*86400000) };
-}
-
-function whenText(target, now) {
-  const days = Math.round((target - now) / 86400000);
-  if (days <= 0) return ['now', ''];
-  if (days === 1) return ['tomorrow', target.toLocaleDateString('en-US',{weekday:'long'})];
-  if (days <= 6)  return [`in ${days} days`, 'on '+target.toLocaleDateString('en-US',{weekday:'long'})];
-  if (days <= 27) return [`in ${days} days`, target.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})];
-  return [`in about ${Math.round(days/7)} weeks`, target.toLocaleDateString('en-US',{month:'short',day:'numeric'})];
 }
 
 // ── Chart defaults ───────────────────────────────────────────
@@ -992,7 +839,7 @@ function cleaningMarkersPlugin(cleanings) {
         ctx.setLineDash([]);
 
         // Badge
-        const badge = c.type === 'manual' ? 'Cleaned ✓' : 'Cleaned';
+        const badge = c.label || 'Maintenance';
         ctx.font = `600 10px ${FONT}`;
         const tw = ctx.measureText(badge).width;
         const bw = tw + 10, bh = 16;
@@ -1017,22 +864,61 @@ function cleaningMarkersPlugin(cleanings) {
 
 // ── Cleaning data helpers ────────────────────────────────────
 function loadManualCleanings() {
-  try { return JSON.parse(localStorage.getItem(CLEANINGS_KEY) || '[]'); }
+  try {
+    const records = JSON.parse(localStorage.getItem(CLEANINGS_KEY) || '[]');
+    return Array.isArray(records) ? records.filter(c => c && typeof c.ts === 'string' && Number.isFinite(+new Date(c.ts))) : [];
+  }
   catch { return []; }
 }
 
-function saveManualCleaning(isoStr) {
-  const list = loadManualCleanings();
-  list.push({ ts: isoStr });
-  list.sort((a, b) => a.ts.localeCompare(b.ts));
-  localStorage.setItem(CLEANINGS_KEY, JSON.stringify(list));
+const MAINTENANCE_LABELS = {
+  filter_element: 'Filter element rinsed',
+  filter_canister: 'Bottom of filter canister rinsed',
+  surface_skimmer: 'Surface skimmer basket emptied',
+  pump_basket: 'Pump basket emptied',
+};
+let maintenanceEvents = [];
+function maintenanceRecords() {
+  return [...maintenanceEvents, ...loadManualCleanings().map(c => ({...c, legacy: true}))];
 }
-
+async function loadMaintenance() {
+  const status = document.getElementById('maintenance-status');
+  try {
+    const response = await fetch('api/maintenance', {cache: 'no-store'});
+    if (!response.ok) throw new Error();
+    const events = await response.json();
+    if (!Array.isArray(events)) throw new Error();
+    maintenanceEvents = events;
+    status.textContent = 'Maintenance history · saved on the monitor';
+  } catch {
+    status.textContent = 'Shared maintenance history unavailable. Previously loaded entries remain visible.';
+  }
+  renderMaintenance();
+}
+function renderMaintenance() {
+  const records = maintenanceRecords().sort((a,b) => b.ts.localeCompare(a.ts));
+  document.getElementById('maintenance-history').innerHTML = records.length
+    ? records.map(c => `<div class="row"><div class="row-time">${escapeHTML(fmtTime(c.ts))}</div>
+        <div class="row-msg">${escapeHTML(MAINTENANCE_LABELS[c.kind] || 'Cleaning logged (type unspecified)')}</div>
+        ${c.notes ? `<div>${escapeHTML(c.notes)}</div>` : ''}
+        ${c.legacy ? '<div class="row-time">Older entry · saved in this browser</div>' : ''}</div>`).join('')
+    : '<div class="empty">No maintenance recorded yet.</div>';
+}
+async function saveManualCleaning(isoStr, kind, notes, id) {
+  const response = await fetch('api/maintenance', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id, ts: isoStr, kind, notes}),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'Could not save maintenance');
+  maintenanceEvents = [...maintenanceEvents.filter(c => c.id !== result.id), result];
+  renderMaintenance();
+}
 function buildCleanings() {
-  const manual = loadManualCleanings().map(c => ({
+  const manual = maintenanceRecords().map(c => ({
     ts:    new Date(c.ts),
     type:  'manual',
-    label: 'Manually logged',
+    label: MAINTENANCE_LABELS[c.kind] || 'Cleaning (unspecified)',
   }));
   return manual;
 }
@@ -1061,85 +947,6 @@ function thresholdLines(lines) {
 function renderCharts(d) {
   Object.values(charts).forEach(c => c?.destroy());
   charts = {};
-
-  const alertPct = dashCfg.speeds.low.alertPct;
-  const emergPct = dashCfg.speeds.low.emergencyPct;
-
-  // Filter restriction
-  charts.restriction = new Chart(document.getElementById('chart-restriction'), {
-    type: 'line',
-    data: { labels: d.labels, datasets: [{
-      label: '% above baseline', data: d.restriction,
-      borderColor: C.green, borderWidth: 2, tension: 0.35,
-      pointRadius: 0, pointHoverRadius: 4,
-      pointHoverBackgroundColor: C.green, pointHoverBorderColor: '#030a15', pointHoverBorderWidth: 2,
-      fill: true,
-      backgroundColor: ctx => gradient(ctx.chart.ctx, ctx.chart.chartArea, C.green, 0.28, 0.0),
-    }]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: { ...TOOLTIP_BASE, callbacks: {
-          title: items => fmtTime(d.labels[items[0].dataIndex]),
-          label: c => `  ${c.parsed.y >= 0 ? '+' : ''}${c.parsed.y.toFixed(0)}% above clean`,
-        }},
-      },
-      scales: {
-        x: { ...BASE_X, ticks: { ...BASE_X.ticks, callback: v => fmtDay(d.labels[v]) } },
-        y: yAxis({ suggestedMin: -10,
-          max: (() => {
-            const peak = Math.max(...d.restriction, 0);
-            // Always show the alert line with breathing room above it;
-            // scale higher only when data actually exceeds the alert threshold.
-            return Math.ceil(Math.max(peak * 1.25 + 5, alertPct + 25) / 25) * 25;
-          })(),
-          ticks: { color: C.text3, padding: 10, maxTicksLimit: 7,
-            callback: v => (v>0?'+':'') + v + '%' } }),
-      },
-    },
-    plugins: [thresholdLines([
-      { y: alertPct, color: C.amber, label: 'Alert' },
-      { y: emergPct, color: C.red,   label: 'Emergency' },
-    ]), cleaningMarkersPlugin(allCleanings), crosshair],
-  });
-  legend('legend-restriction', [
-    { label: 'Restriction', color: C.green },
-    { label: `Alert +${alertPct}%`,  color: C.amber, dash: true },
-    { label: `Emergency +${emergPct}%`, color: C.red, dash: true },
-  ]);
-
-  // Energy cost — just the wasted delta (clog cost above clean baseline)
-  const peakExtraCost = Math.max(...d.eExtra, 0);
-  charts.energy = new Chart(document.getElementById('chart-energy'), {
-    type: 'bar',
-    data: { labels: d.eLabels, datasets: [
-      { label: 'Extra cost', data: d.eExtra, backgroundColor: hexA(C.amber, 0.85),
-        borderRadius: 6, maxBarThickness: 30 },
-    ]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: { ...TOOLTIP_BASE, callbacks: {
-          title: items => fmtDay(d.eLabels[items[0].dataIndex]),
-          label: c => c.parsed.y > 0
-            ? `  Extra cost from clog: $${c.parsed.y.toFixed(2)}`
-            : `  No extra cost — filter below alert threshold`,
-        }},
-      },
-      scales: {
-        x: { ...BASE_X, ticks: { ...BASE_X.ticks, maxTicksLimit: 8, callback: v => fmtDay(d.eLabels[v]) } },
-        y: yAxis({ suggestedMax: Math.max(peakExtraCost * 1.3, 0.5),
-          ticks: { color: C.text3, padding: 10, maxTicksLimit: 5, callback: v => '$'+v.toFixed(2) } }),
-      },
-    },
-  });
-  legend('legend-energy', [
-    { label: 'Extra cost from clog', color: C.amber, dot: true },
-  ]);
 
   // Return flow: an independent hydraulic signal. The dashed line is learned
   // only from the same active program/reference/setpoint when that context exists.
@@ -1242,55 +1049,6 @@ function renderCharts(d) {
     { label: 'Clean PSI reference', color: C.green, dash: true },
   ]);
 
-  // Pump workload: extra watts (actual − expected per-band baseline)
-  // Sits near 0 when clean, rises with clogging — independent of speed program switches.
-  const extraWatts = d.watts.map((w, i) => {
-    const exp = d.expectedWatts[i];
-    return exp != null ? w - exp : null;
-  });
-  const peakExtra = Math.max(...extraWatts.filter(v => v != null), 0);
-
-  charts.power = new Chart(document.getElementById('chart-power'), {
-    type: 'line',
-    data: { labels: d.labels, datasets: [{
-      label: 'Extra W', data: extraWatts,
-      borderColor: C.amber, borderWidth: 2, tension: 0.35,
-      pointRadius: 0, pointHoverRadius: 4,
-      pointHoverBackgroundColor: C.amber, pointHoverBorderColor: '#030a15', pointHoverBorderWidth: 2,
-      fill: true,
-      backgroundColor: ctx => gradient(ctx.chart.ctx, ctx.chart.chartArea, C.amber, 0.30, 0.0),
-    }]},
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: { ...TOOLTIP_BASE, callbacks: {
-          title: items => fmtTime(d.labels[items[0].dataIndex]),
-          label: c => {
-            const v = c.parsed.y;
-            if (v == null) return null;
-            const i = c.dataIndex;
-            return [
-              `  Extra: ${v >= 0 ? '+' : ''}${v} W above clean`,
-              `  Actual: ${d.watts[i]} W  ·  Expected: ${d.expectedWatts[i] ?? '—'} W`,
-            ];
-          },
-        }},
-      },
-      scales: {
-        x: { ...BASE_X, ticks: { ...BASE_X.ticks, callback: v => fmtDay(d.labels[v]) } },
-        y: yAxis({
-          suggestedMin: Math.min(...extraWatts.filter(v => v != null), 0) - 5,
-          max: Math.ceil(Math.max(peakExtra * 1.25 + 5, 30) / 10) * 10,
-          ticks: { color: C.text3, padding: 10, maxTicksLimit: 6,
-            callback: v => (v >= 0 ? '+' : '') + v + 'W' },
-        }),
-      },
-    },
-    plugins: [crosshair],
-  });
-  legend('legend-power', [{ label: 'Extra watts above clean baseline', color: C.amber }]);
 }
 
 // ── Legend HTML ──────────────────────────────────────────────
@@ -1303,13 +1061,6 @@ function legend(id, items) {
 }
 
 // ── Update hero from data ────────────────────────────────────
-function latestFreshAlertLevel(rows) {
-  for (let i = rows.length - 1; i >= 0; i--) {
-    if (rows[i].hydraulicQuality === 'verified') return rows[i].level;
-  }
-  return rows.at(-1)?.level;
-}
-
 // A repeated poll is not a new observation, but its verified source pair can
 // remain usable until it expires. Never carry values across a partial update
 // or an operating-program change. Historical classification stays strict.
@@ -1327,48 +1078,89 @@ function currentHydraulicIndex(rows, now = Date.now()) {
   return Number.isFinite(age) && age >= 0 && age < dashCfg.staleAfterSeconds ? index : -1;
 }
 
+// Evaluate the full history so changing the chart range cannot change status.
+// Compare independent samples within each program, across daily schedule changes.
+// A gap of three days in that program resets confirmation.
+function returnFlowStatus(rows, references, now = Date.now()) {
+  const index = currentHydraulicIndex(rows, now);
+  if (index < 0) return {kind: 'stale', loss: null};
+  const row = rows[index];
+  if (row.watts === 0) return {kind: 'off', loss: null};
+  const reference = sessionReferenceForRow(row, references);
+  if (!(reference > 0) || !Number.isFinite(row.gph) || row.gph < 0)
+    return {kind: 'learning', loss: null};
+  const cfg = dashCfg.returnFlow;
+  const lossFor = r => Math.max(0, (1 - r.gph / reference) * 100);
+  const levelFor = loss => loss + 1e-9 >= cfg.inspectPct ? 3
+    : loss + 1e-9 >= cfg.cleanPct ? 2 : loss + 1e-9 >= cfg.watchPct ? 1 : 0;
+  const loss = lossFor(row);
+  const levels = [];
+  let newerTime = null;
+  for (let i = index; i >= 0 && levels.length < cfg.confirmations; i--) {
+    const sample = rows[i];
+    if (flowKey(sample) !== flowKey(row)) continue;
+    if (sample.watts === 0) break;
+    if (sample.hydraulicQuality !== 'verified') continue;
+    const parts = sample.telemetryVersion.split('|');
+    const time = Math.min(+parts[1], +parts[3]);
+    if (newerTime !== null && newerTime - time >= 72 * 3600) break;
+    if (!Number.isFinite(sample.gph) || sample.gph < 0) break;
+    levels.push(levelFor(lossFor(sample)));
+    newerTime = time;
+  }
+  const confirmed = levels.length === cfg.confirmations ? Math.min(...levels) : 0;
+  return {kind: confirmed === 3 ? 'inspect' : confirmed === 2 ? 'clean'
+    : confirmed === 1 ? 'watch' : levelFor(loss) > 0 ? 'confirming' : 'healthy', loss};
+}
+
 function setHeroFromData(d) {
   const hydraulicIndex = currentHydraulicIndex(d.rows);
-  const nowPct  = d.restriction[hydraulicIndex] ?? 0;
-  const peakPct = Math.max(...d.restriction);
   const latestW = d.watts[d.watts.length - 1] ?? 0;
   const latestG = d.gpm[hydraulicIndex] ?? 0;
   const lr      = d.latestRow;
-  const liveLevel = latestFreshAlertLevel(d.rows);
+  const flowStatus = returnFlowStatus(allRows, cleanFlowReferences);
   const hydraulicsFresh = hydraulicIndex >= 0;
 
   // Status state
   let word, head, detail, status, glow;
   if (!hydraulicsFresh) {
     word='Waiting'; head='Hydraulic readings are stale';
-    detail='Pentair has not supplied newer pressure and flow data, so current hydraulic values and alerts are paused.';
+    detail='Pentair has not supplied newer pressure and flow data, so current hydraulic values and cleaning guidance are paused.';
     status=C.amber; glow='rgba(255,159,10,0.20)';
-  } else if (liveLevel === 'critical') {
-    word='Action needed'; head='Pump pressure is critically high';
-    detail='The live monitor reported a critical hydraulic condition. Stop and inspect the circulation path.';
-    status=C.red; glow='rgba(255,69,58,0.22)';
-  } else if (liveLevel === 'warn') {
-    word='Heads up'; head='Pump pressure needs attention';
-    detail='The live monitor reported elevated pressure. Check the pressure and return-flow charts before deciding what to clean.';
+  } else if (flowStatus.kind === 'off') {
+    word='Paused'; head='Pump is off';
+    detail='Filter-cleaning status resumes when the pump is running with fresh return-flow readings.';
     status=C.amber; glow='rgba(255,159,10,0.20)';
-  } else if (nowPct >= 300) {
-    word='Action needed'; head='Clean the filter now';
-    detail='Restriction is past the emergency line — flow is choked and the pump is working hard.';
+  } else if (flowStatus.kind === 'learning') {
+    word='Waiting'; head='Learning the clean return flow';
+    detail='At least five verified flow readings for this program and setpoint are needed before comparing flow loss.';
+    status=C.amber; glow='rgba(255,159,10,0.20)';
+  } else if (flowStatus.kind === 'inspect') {
+    word='Action needed'; head='Return flow is very low';
+    detail='Sustained flow loss is severe. Inspect the filter, baskets and valves now; clean the filter if dirty.';
     status=C.red; glow='rgba(255,69,58,0.22)';
-  } else if (nowPct >= 100) {
-    word='Heads up'; head='Time to rinse the filter';
-    detail='Restriction crossed the alert line. A quick clean will cut energy waste and restore flow.';
+  } else if (flowStatus.kind === 'clean') {
+    word='Check flow'; head='Check for a flow restriction';
+    detail='Return flow has stayed below the cleaning threshold for this program. Check baskets and valves, then clean the filter if dirty.';
+    status=C.amber; glow='rgba(255,159,10,0.20)';
+  } else if (flowStatus.kind === 'watch') {
+    word='Watch'; head='Return flow is dropping';
+    detail='A sustained drop from the estimated clean reference is worth watching. Plan a filter check if flow continues to fall.';
+    status=C.amber; glow='rgba(255,159,10,0.20)';
+  } else if (flowStatus.kind === 'confirming') {
+    word='Checking'; head='Confirming reduced return flow';
+    detail='Flow is below the watch threshold. Waiting for more fresh readings to confirm a sustained drop.';
     status=C.amber; glow='rgba(255,159,10,0.20)';
   } else {
-    word='All clear'; head='Your filter is running clean';
-    detail='No action needed — restriction is well within the normal range.';
+    word='All clear'; head='Return flow is healthy';
+    detail='Return flow is close to the estimated clean reference for this program. No cleaning indicated by flow.';
     status=C.green; glow='rgba(48,209,88,0.18)';
   }
 
   document.getElementById('status-word').textContent = word;
   document.getElementById('status-headline').textContent = head;
   document.getElementById('status-detail').textContent = detail;
-  document.getElementById('hero-restriction').textContent = hydraulicsFresh ? (nowPct>=0?'+':'') + Math.round(nowPct) + '%' : '—';
+  document.getElementById('hero-flow-loss').textContent = flowStatus.loss !== null ? Math.round(flowStatus.loss) + '%' : '—';
   document.documentElement.style.setProperty('--status', status);
   document.getElementById('hero').style.setProperty('--status-glow', glow);
 
@@ -1377,12 +1169,6 @@ function setHeroFromData(d) {
     const mode = lr.mode || 'low';
     document.getElementById('speed-chip').textContent =
       mode.charAt(0).toUpperCase() + mode.slice(1) + ' speed';
-
-    const modeCfg = dashCfg.speeds[mode] || dashCfg.speeds.low;
-    if (modeCfg.baseline) {
-      document.getElementById('st-baseline').innerHTML =
-        modeCfg.baseline.toFixed(4) + '<small> W/GPH</small>';
-    }
 
     const ageMin = (Date.now() - new Date(lr.ts)) / 60000;
     const updEl  = document.getElementById('hero-updated');
@@ -1394,16 +1180,6 @@ function setHeroFromData(d) {
     updEl.className   = 'updated' + (ageMin > STALE_MIN ? ' stale' : '');
   }
 
-  // Stat chips
-  document.getElementById('st-now').innerHTML  = hydraulicsFresh ? (nowPct>=0?'+':'') + Math.round(nowPct) + '<small>%</small>' : '—';
-  document.getElementById('st-peak').innerHTML = (peakPct>=0?'+':'') + Math.round(peakPct) + '<small>%</small>';
-  const half = d.restriction.slice(Math.floor(d.restriction.length / 2));
-  document.getElementById('st-trend').textContent = (half[half.length-1] > half[0]) ? 'Rising' : 'Easing';
-  const expectedW   = lr ? expectedWattsForRow(lr, d.cleanBaselines) : null;
-  const extraW      = expectedW !== null ? latestW - expectedW : null;
-
-  document.getElementById('st-watts').innerHTML = latestW + '<small>W</small>';
-  document.getElementById('st-gpm').innerHTML   = hydraulicsFresh ? latestG + '<small>GPM</small>' : '—';
   const flowRef = d.flowReference[hydraulicIndex] ?? null;
   const flowLoss = d.flowLoss[hydraulicIndex] ?? null;
   document.getElementById('st-flow-now').innerHTML = hydraulicsFresh ? latestG + '<small>GPM</small>' : '—';
@@ -1420,32 +1196,10 @@ function setHeroFromData(d) {
     ? pressureRef.toFixed(2) + '<small> PSI</small>' : '—';
   document.getElementById('st-pressure-rise').innerHTML = Number.isFinite(pressureRise)
     ? (pressureRise >= 0 ? '+' : '') + pressureRise.toFixed(0) + '<small>%</small>' : '—';
-  const extraEl = document.getElementById('st-extra-watts');
-  if (extraW !== null) {
-    extraEl.innerHTML = (extraW > 0 ? '+' : '') + extraW + '<small>W</small>';
-    extraEl.style.color = extraW > 20 ? 'var(--amber)' : 'var(--green)';
-  } else {
-    extraEl.innerHTML = '<small>—</small>';
-    extraEl.style.color = '';
-  }
+  const cfg = dashCfg.returnFlow;
+  document.querySelector('#hero-forecast .hf-text').textContent =
+    `Flow loss: watch ${cfg.watchPct}% · check ${cfg.cleanPct}% · inspect ${cfg.inspectPct}% · ${cfg.confirmations} fresh readings`;
 
-  const totalExtra = d.eExtra.reduce((a,b)=>a+b, 0);
-  const avgExtra   = totalExtra / (d.eExtra.length || 1);
-  document.getElementById('st-avgcost').textContent = '$' + avgExtra.toFixed(2);
-  document.getElementById('st-waste').textContent   = '$' + totalExtra.toFixed(2);
-
-  // Forecast
-  const hf = document.querySelector('#hero-forecast .hf-text');
-  const p  = predictClean(d);
-  if (p.overdue) {
-    hf.innerHTML = 'Cleaning is due <b>now</b>';
-  } else if (p.none) {
-    hf.innerHTML = 'No cleaning needed soon <span class="hf-sub">· trend is flat</span>';
-  } else {
-    const [rel, sub] = whenText(p.target, d.now);
-    hf.innerHTML = `Next cleaning likely <b>${rel}</b>` +
-      (sub ? ` <span class="hf-sub">· ${sub}</span>` : '');
-  }
 }
 
 // ── Config loading (matches config.yaml structure) ───────────
@@ -1453,6 +1207,7 @@ function defaultDashboardConfig() {
   return {
     consecutiveReadingsRequired: 3,
     staleAfterSeconds: 5400,
+    returnFlow: {watchPct: 15, cleanPct: 25, inspectPct: 40, confirmations: 2},
     speeds: {
       low:  { baseline: null, alertPct: 100, emergencyPct: 300 },
       high: { baseline: null, alertPct: 100, emergencyPct: 300 },
@@ -1475,11 +1230,18 @@ function parseDashboardConfig(text, cfg) {
     const line = rawLine.split('#')[0].trimEnd();
     if (!line.trim()) return;
     if (/^telemetry_health:\s*$/.test(line)) { section = 'telemetry_health'; speed = null; return; }
+    if (/^dashboard_return_flow:\s*$/.test(line)) { section = 'return_flow'; speed = null; return; }
     if (/^thresholds:\s*$/.test(line)) { section = 'thresholds'; speed = null; return; }
     if (/^\S/.test(line)) { section = ''; speed = null; return; }
     if (section === 'telemetry_health') {
       const stale = line.match(/^  stale_alert_after_seconds:\s*(\d+)/);
       if (stale && +stale[1] > 0) cfg.staleAfterSeconds = +stale[1];
+      return;
+    }
+    if (section === 'return_flow') {
+      const match = line.match(/^  (watch_loss_pct|clean_loss_pct|inspect_loss_pct|consecutive_readings_required):\s*(\d+(?:\.\d+)?)\s*$/);
+      const keys = {watch_loss_pct: 'watchPct', clean_loss_pct: 'cleanPct', inspect_loss_pct: 'inspectPct', consecutive_readings_required: 'confirmations'};
+      if (match) cfg.returnFlow[keys[match[1]]] = +match[2];
       return;
     }
     if (section !== 'thresholds') return;
@@ -1500,31 +1262,15 @@ function parseDashboardConfig(text, cfg) {
     m = line.match(/^    emergency_ratio_pct:\s*([0-9.]+)/);
     if (m) { cfg.speeds[speed].emergencyPct = +m[1]; }
   });
+  const flow = cfg.returnFlow;
+  if (!(flow.watchPct > 0 && flow.watchPct < flow.cleanPct && flow.cleanPct < flow.inspectPct
+      && flow.inspectPct <= 100 && Number.isInteger(flow.confirmations) && flow.confirmations >= 1))
+    cfg.returnFlow = defaultDashboardConfig().returnFlow;
   return cfg;
 }
 
 function speedCfg(mode) {
   return dashCfg.speeds[mode] || dashCfg.speeds.low;
-}
-
-function annotateRows(rows, cleanBaselines = {}) {
-  const win = [];
-  const req = dashCfg.consecutiveReadingsRequired;
-  rows.forEach(r => {
-    r.baseline  = baselineForRow(r, cleanBaselines);
-    r.pct       = r.hydraulicQuality === 'verified' && r.baseline
-      ? +((r.ratio / r.baseline - 1) * 100).toFixed(2) : null;
-    r.rawLevel  = Number.isFinite(r.pct) ? rawLevelForPct(r.pct, r.mode) : 'normal';
-
-    win.push(r.rawLevel);
-    if (win.length > req) win.shift();
-
-    r.effectiveLevel = 'normal';
-    if (win.length >= req) {
-      if (win.every(l => l === 'critical')) r.effectiveLevel = 'critical';
-      else if (win.every(l => l === 'warn' || l === 'critical')) r.effectiveLevel = 'warn';
-    }
-  });
 }
 
 function classifyHydraulicRows(rows) {
@@ -1549,53 +1295,9 @@ function classifyHydraulicRows(rows) {
   });
 }
 
-function rawLevelForPct(pct, mode) {
-  const cfg = speedCfg(mode);
-  if (pct >= cfg.emergencyPct) return 'critical';
-  if (pct >= cfg.alertPct)     return 'warn';
-  return 'normal';
-}
-
 // ── Build chart-ready data from loaded CSV rows ──────────────
-// Derive a clean-filter W/GPH baseline for each 200-GPH flow bucket from all loaded data.
-// Uses the 10th-percentile ratio per bucket — robust against outliers while still reflecting
-// the cleanest operating state observed at that flow target.
-function computeCleanBaselines(rows) {
-  const buckets = {};
-  rows.forEach(r => {
-    if (!r.gph || !r.ratio) return;
-    if (r.mode === 'high') return;  // high-speed ramp contaminates low-speed baselines
-    const band = Math.round(r.gph / 200) * 200;
-    if (!buckets[band]) buckets[band] = [];
-    buckets[band].push(r.ratio);
-  });
-  const result = {};
-  Object.entries(buckets).forEach(([band, ratios]) => {
-    if (ratios.length < 5) return;          // ignore sparse buckets
-    ratios.sort((a, b) => a - b);
-    result[+band] = ratios[Math.floor(ratios.length * 0.10)];
-  });
-  return result;
-}
-
 function hasVerifiedProgramContext(r) {
   return Boolean(r.activeProgram && r.activeReference !== '' && r.activeSetpoint !== null);
-}
-
-function expectedWattsForRow(r, cleanBaselines) {
-  const baseline = cleanBaselineForRow(r, cleanBaselines);
-  return baseline ? Math.round(baseline * r.gph) : null;
-}
-
-function cleanBaselineForRow(r, cleanBaselines) {
-  if (!r.gph || !r.ratio) return null;
-  if (r.mode === 'high') return null;  // high-speed ramp: no meaningful baseline, show gap
-  const band = Math.round(r.gph / 200) * 200;
-  return cleanBaselines[band] || null;
-}
-
-function baselineForRow(r, cleanBaselines) {
-  return r.rowBaseline || speedCfg(r.mode).baseline || cleanBaselineForRow(r, cleanBaselines);
 }
 
 function flowKey(r) {
@@ -1646,59 +1348,25 @@ function buildRealData(days) {
   // fresh-only subset below remains the source for calculations that would be
   // biased by counting an unchanged snapshot as another interval of runtime.
   const rows = allRows.filter(r => new Date(r.ts) >= cutoff);
-  const calculationRows = freshRows.filter(r => new Date(r.ts) >= cutoff);
   if (!rows.length) return null;
 
   // Build baselines from ALL loaded history, not just the display window,
   // so we always have clean-filter reference points even for recent dirty periods.
   const labels = rows.map(r => new Date(r.ts));
-  const restriction   = rows.map(r => r.pct);
   const watts         = rows.map(r => r.watts);
   const gpm           = rows.map(r => r.gpm !== null ? +r.gpm.toFixed(1) : null);
-  const expectedWatts = rows.map(r => expectedWattsForRow(r, cleanBaselines));
-  const flow = rows.map(r => r.hydraulicQuality === 'verified' ? r.gph || null : null);
+  const flow = rows.map(r => r.hydraulicQuality === 'verified' && Number.isFinite(r.gph) ? r.gph : null);
   const pressurePsi = rows.map(r => r.hydraulicQuality === 'verified' ? r.pressurePsi : null);
   const flowReference = rows.map(r => sessionReferenceForRow(r, cleanFlowReferences));
-  const flowLoss = flow.map((value, i) => flowReference[i] ? (1 - value / flowReference[i]) * 100 : null);
+  const flowLoss = flow.map((value, i) => Number.isFinite(value) && flowReference[i] > 0 ? (1 - value / flowReference[i]) * 100 : null);
   const pressureReference = rows.map(r => sessionReferenceForRow(r, cleanPressureReferences));
   const pressureRise = pressurePsi.map((value, i) => (
     Number.isFinite(value) && Number.isFinite(pressureReference[i])
       ? (value / pressureReference[i] - 1) * 100 : null
   ));
 
-  // Daily energy cost
-  const byDay = {};
-  calculationRows.forEach(r => {
-    const day = r.ts.slice(0, 10);
-    if (!byDay[day]) byDay[day] = [];
-    byDay[day].push(r);
-  });
-  const today = now.toISOString().slice(0, 10);
-  const dayKeys = Object.keys(byDay).sort().filter(d => d !== today);
-  const eLabels = dayKeys.map(d => new Date(d + 'T12:00:00'));
-  const eBase = [], eExtra = [];
-  dayKeys.forEach(day => {
-    let base = 0, extra = 0;
-    byDay[day].forEach(r => {
-      const actualCost = r.watts * POLL_HRS / 1000 * KWH_RATE;
-      const expW = expectedWattsForRow(r, cleanBaselines);
-      if (expW) {
-        const baseCost = expW * POLL_HRS / 1000 * KWH_RATE;
-        base += baseCost;
-        // Only count as wasted cost when restriction is at or above the alert threshold
-        if (r.pct >= speedCfg(r.mode).alertPct) {
-          extra += Math.max(0, actualCost - baseCost);
-        }
-      } else {
-        base += actualCost;
-      }
-    });
-    eBase.push(+base.toFixed(3));
-    eExtra.push(+extra.toFixed(3));
-  });
-
-  return { now, rows, labels, restriction, watts, gpm, expectedWatts, flow, pressurePsi, flowReference, flowLoss, pressureReference, pressureRise, eLabels, eBase, eExtra,
-           cleanBaselines, latestRow: rows[rows.length - 1] };
+  return { now, rows, labels, watts, gpm, flow, pressurePsi, flowReference, flowLoss, pressureReference, pressureRise,
+           latestRow: rows[rows.length - 1] };
 }
 
 // ── Build alert/issue arrays for renderList ──────────────────
@@ -1731,12 +1399,12 @@ function buildIssues(errors, recalibrations, limit = MAX_ALERTS) {
     msg:  'Possible filter cleaning — unverified',
     tech: `${r.speed_mode} speed candidate · baseline ${r.old_baseline} → ${r.new_baseline} W/GPH`,
   }));
-  const manualItems = loadManualCleanings().map(c => ({
+  const manualItems = maintenanceRecords().map(c => ({
     ts:   c.ts,
     time: fmtTime(c.ts),
-    sev:  'ok',
-    msg:  'Filter cleaned (manually logged)',
-    tech: 'Recorded via dashboard · stored in browser',
+    sev:  'recorded',
+    msg:  MAINTENANCE_LABELS[c.kind] || 'Cleaning logged (type unspecified)',
+    tech: c.notes || (c.legacy ? 'Older entry · stored in browser' : 'Recorded via dashboard · saved on monitor'),
   }));
   const issues = [...errItems, ...cleanItems, ...manualItems]
     .sort((a, b) => b.ts.localeCompare(a.ts));
@@ -1745,7 +1413,7 @@ function buildIssues(errors, recalibrations, limit = MAX_ALERTS) {
 
 // ── List rendering ───────────────────────────────────────────
 function sevPill(sev) {
-  const map = { warn:['warn','Warn'], emerg:['emerg','Emergency'], ok:['ok','Resolved'], muted:['muted','Info'] };
+  const map = { warn:['warn','Warn'], emerg:['emerg','Emergency'], ok:['ok','Resolved'], recorded:['ok','Recorded'], muted:['muted','Info'] };
   const [cls, label] = map[sev] || map.muted;
   return `<span class="pill ${cls}">${label}</span>`;
 }
@@ -1803,11 +1471,16 @@ function wireCleaningForm() {
   const saveBtn   = document.getElementById('cleaning-save');
   const cancelBtn = document.getElementById('cleaning-cancel');
 
+  let entryId = null;
+  const error = document.getElementById('cleaning-error');
   openBtn.addEventListener('click', () => {
+    entryId = crypto.randomUUID ? crypto.randomUUID() : '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+    error.textContent = '';
+    document.getElementById('cleaning-notes').value = '';
     const now = new Date();
     now.setSeconds(0, 0);
     // datetime-local value format: YYYY-MM-DDTHH:MM
-    dtInput.value = now.toISOString().slice(0, 16);
+    dtInput.value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     form.hidden = false;
     openBtn.style.display = 'none';
     dtInput.focus();
@@ -1818,15 +1491,29 @@ function wireCleaningForm() {
     openBtn.style.display = '';
   });
 
-  saveBtn.addEventListener('click', () => {
-    const val = dtInput.value;
-    if (!val) return;
-    saveManualCleaning(new Date(val).toISOString());
-    form.hidden = true;
-    openBtn.style.display = '';
-    allCleanings = buildCleanings();
-    renderActivityLists();
-    renderFromData();
+  saveBtn.addEventListener('click', async () => {
+    const date = new Date(dtInput.value);
+    if (!dtInput.value || !Number.isFinite(+date) || +date > Date.now() + 300000) {
+      error.textContent = 'Choose a valid date and time, not in the future.';
+      return;
+    }
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    error.textContent = '';
+    try {
+      await saveManualCleaning(date.toISOString(), document.getElementById('cleaning-kind').value,
+        document.getElementById('cleaning-notes').value, entryId);
+      form.hidden = true;
+      openBtn.style.display = '';
+      allCleanings = buildCleanings();
+      renderActivityLists();
+      renderFromData();
+    } catch (err) {
+      error.textContent = 'Entry not confirmed saved. ' + err.message + '. Please retry.';
+    } finally {
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+    }
   });
 }
 
@@ -1895,7 +1582,7 @@ function parseCSV(text) {
     return {
       ts:          o.timestamp,
       watts:       +o.power_watts,
-      gph:         +o.flow_gph,
+      gph:         o.flow_gph ? Number(o.flow_gph) : null,
       gpm:         o.flow_gph ? +o.flow_gph / 60 : null,
       ratio:       o.watts_per_gph           ? +o.watts_per_gph           : null,
       rowBaseline: o.baseline_watts_per_gph  ? +o.baseline_watts_per_gph  : null,
@@ -1910,12 +1597,10 @@ function parseCSV(text) {
       motorSpeedPct: o.motor_speed_pct === '' ? null : +o.motor_speed_pct,
       telemetryVersion: o.telemetry_version || null,
     };
-  }).filter(r => r.ratio !== null);
+  }).filter(r => !isNaN(new Date(r.ts)));
   classifyHydraulicRows(allRows);
   freshRows = allRows.filter(r => r.hydraulicQuality === 'verified');
   const trustedRows = freshRows.filter(hasVerifiedProgramContext);
-  cleanBaselines = computeCleanBaselines(trustedRows);
-  annotateRows(allRows, cleanBaselines);
   cleanFlowReferences = computeCleanFlowReferences(trustedRows);
   cleanPressureReferences = computeCleanPressureReferences(trustedRows);
 }
@@ -1974,6 +1659,7 @@ function maybeSendDesktopAlerts(notifications) {
 // ── Main init ────────────────────────────────────────────────
 async function init() {
   const t = Date.now();
+  await loadMaintenance();
   const configPromise = loadDashboardConfig(t);
   const metricsPromise = fetch(FILES.csv + '?t=' + t);
   dashCfg = await configPromise;
@@ -2019,17 +1705,38 @@ async function init() {
 }
 
 // ── Auto-refresh ─────────────────────────────────────────────
-setInterval(() => {
-  allRows = [];
-  init();
-}, REFRESH_MS);
+let refreshInFlight = false;
+let dashboardSource = null;
+async function refreshDashboard() {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
+  try {
+    const response = await fetch(location.pathname + '?version=' + Date.now(), {cache: 'no-store'});
+    if (response.ok) {
+      const html = await response.text();
+      const version = html.match(/data-dashboard-version="([^"]+)"/)?.[1];
+      const changed = (version && version !== document.documentElement.dataset.dashboardVersion)
+        || (dashboardSource !== null && html !== dashboardSource);
+      if (changed && document.getElementById('cleaning-form').hidden) {
+        location.reload();
+        return;
+      }
+      if (!changed) dashboardSource = html;
+    }
+  } catch { /* Still refresh readings if the version check fails. */ }
+  try { await init(); } finally { refreshInFlight = false; }
+}
+setInterval(refreshDashboard, REFRESH_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshDashboard();
+});
 
 // ── Boot ─────────────────────────────────────────────────────
 wireInfoButtons();
 wireCleaningForm();
 wireActivityHistoryControls();
 setupDesktopAlerts();
-init();
+refreshDashboard();
 </script>
 </body>
 </html>

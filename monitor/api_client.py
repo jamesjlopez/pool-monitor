@@ -33,8 +33,10 @@ For testing without a live pump, use MockPentairClient.
 
 import json
 import logging
+import math
 import os
 import time
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional
 
@@ -86,6 +88,8 @@ class PentairCloudClient:
         self._session_token: Optional[str]      = None
         self._cred_expiry:   float              = 0.0
         self._device_id:     Optional[str]      = None
+        self._poll_blocked_until = 0.0
+        self._poll_rejections = 0
         self._authenticate()
 
     # ------------------------------------------------------------------
@@ -94,6 +98,9 @@ class PentairCloudClient:
 
     def get_status(self) -> Optional[PumpStatus]:
         """Fetch current pump telemetry. Returns None on any error."""
+        if time.monotonic() < self._poll_blocked_until:
+            log.info("Skipping telemetry request during Pentair rate-limit backoff")
+            return None
         try:
             self._refresh_if_needed()
             if not self._device_id:
@@ -101,10 +108,37 @@ class PentairCloudClient:
             if not self._device_id:
                 log.error("No Pentair device found in account")
                 return None
-            return self._fetch_status()
+            status = self._fetch_status()
+            if status is not None:
+                self._poll_rejections = 0
+                self._poll_blocked_until = 0.0
+            return status
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 429:
+                self._back_off_polling(e.response.headers.get("Retry-After"))
+            else:
+                log.error("get_status failed: %s", e)
+            return None
         except Exception as e:
             log.error("get_status failed: %s", e)
             return None
+
+    def _back_off_polling(self, retry_after: Optional[str]) -> None:
+        """Back off reads on HTTP 429; emergency control attempts remain available."""
+        self._poll_rejections = min(self._poll_rejections + 1, 5)
+        delay = min(300 * 2 ** (self._poll_rejections - 1), 3600)
+        if retry_after:
+            try:
+                requested = float(retry_after)
+            except ValueError:
+                try:
+                    requested = parsedate_to_datetime(retry_after).timestamp() - time.time()
+                except (ValueError, TypeError, OverflowError):
+                    requested = 0
+            if math.isfinite(requested):
+                delay = max(delay, requested)
+        self._poll_blocked_until = time.monotonic() + delay
+        log.warning("Pentair rate-limited telemetry (HTTP 429); pausing polls for %.0f seconds", delay)
 
     def set_speed_program(self, program_index: int) -> bool:
         """Activate a pump program by 1-based program number (e.g. 2 = Low speed)."""
@@ -320,6 +354,10 @@ def _parse_status(device_data: dict) -> PumpStatus:
             "prog_name": prog_name,
             "active_reference": active_reference,
             "active_setpoint": active_setpoint,
+            "field_timestamps": {
+                key: fields[key].get("timestamp") for key in ("s18", "s26")
+                if isinstance(fields.get(key), dict)
+            },
             "fields_snapshot": {k: fields[k].get("value") if isinstance(fields[k], dict)
                                 else fields[k] for k in (
                                     "appuse", "d25", "s3", "s14", "s16",

@@ -37,6 +37,7 @@ CALIBRATED_CONFIG = {
     },
     "emergency_shutoff": {
         "enabled": False,
+        "pressure_mapping_verified": True,
         "consecutive_required": 5,
         "delay_seconds": 30,
     },
@@ -46,6 +47,16 @@ CALIBRATED_CONFIG = {
         "stale_retry_delays_seconds": [120, 300, 600],
     },
 }
+
+
+@pytest.mark.parametrize("interval,now,delay", [(300, 601, 299), (300, 900, 300),
+                                               (1800, 601, 299)])
+def test_routine_poll_alignment(interval, now, delay, mocker):
+    from monitor.runner import _sleep_until_next_slot
+    mocker.patch("monitor.runner.time.time", return_value=now)
+    sleep = mocker.patch("monitor.runner.time.sleep")
+    _sleep_until_next_slot(interval)
+    sleep.assert_called_once_with(delay)
 
 
 def make_sequence(*statuses):
@@ -123,7 +134,7 @@ class TestRunOnce:
         mock_resp.raise_for_status.return_value = None
         mocker.patch("monitor.notifier.requests.post", return_value=mock_resp)
 
-        clogged = PumpStatus(rpm=1050, power_watts=195, flow_gph=500, is_running=True)
+        clogged = PumpStatus(rpm=1050, power_watts=195, flow_gph=500, is_running=True, pressure_psi=13)
         engine = Engine(CALIBRATED_CONFIG)
         notifier = NtfyNotifier(CALIBRATED_CONFIG)
 
@@ -137,7 +148,7 @@ class TestRunOnce:
 
     def test_dry_run_suppresses_notification(self, mocker):
         mock_post = mocker.patch("monitor.notifier.requests.post")
-        clogged = PumpStatus(rpm=1050, power_watts=195, flow_gph=500, is_running=True)
+        clogged = PumpStatus(rpm=1050, power_watts=195, flow_gph=500, is_running=True, pressure_psi=13)
         engine = Engine({
             **CALIBRATED_CONFIG,
             "thresholds": {
@@ -151,7 +162,7 @@ class TestRunOnce:
         mock_post.assert_not_called()
 
     def test_emergency_shutoff_not_triggered_when_disabled(self, mocker):
-        extreme = PumpStatus(rpm=1050, power_watts=300, flow_gph=200, is_running=True)
+        extreme = PumpStatus(rpm=1050, power_watts=300, flow_gph=200, is_running=True, pressure_psi=19)
         mocker.patch("monitor.notifier.requests.post", return_value=mocker.MagicMock(
             raise_for_status=lambda: None
         ))
@@ -179,7 +190,7 @@ class TestRunOnce:
                 "delay_seconds": 0,
             },
         }
-        extreme = PumpStatus(rpm=1050, power_watts=300, flow_gph=200, is_running=True)
+        extreme = PumpStatus(rpm=1050, power_watts=300, flow_gph=200, is_running=True, pressure_psi=19)
         client = make_sequence(extreme)
         client.turn_off = mocker.MagicMock(return_value=True)
         notifier = mocker.MagicMock(spec=NtfyNotifier)
@@ -188,13 +199,13 @@ class TestRunOnce:
 
         result = run_once(client, Engine(config), notifier, config)
 
-        assert result.level == AlertLevel.CRITICAL
+        assert result.level == AlertLevel.NORMAL
         client.turn_off.assert_not_called()
 
     def test_successful_shutoff_requires_fresh_confirmation_after_restart(self, mocker, tmp_path):
         import monitor.runner as runner
 
-        extreme = PumpStatus(rpm=1050, power_watts=300, flow_gph=200, is_running=True)
+        extreme = PumpStatus(rpm=1050, power_watts=300, flow_gph=200, is_running=True, pressure_psi=19)
         config = {
             **CALIBRATED_CONFIG,
             "thresholds": {

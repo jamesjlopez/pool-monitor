@@ -7,11 +7,27 @@ pentair:
   password: ""     # your Pentair Home app password (or use env var)
 
 pump:
-  poll_interval_seconds: 1800
+  poll_interval_seconds: 300          # routine checks every 5 minutes; brief fast confirmations remain
+
+# Backup only: Pentair hydraulic source measurements currently update hourly.
+# This cannot detect starvation between source updates. Keep onboard protection enabled.
+flow_safety:
+  enabled: true
+  minimum_flow_gph: 600              # conservative severe-flow floor (10 GPM), not a diagnosis
+  max_sample_age_seconds: 600        # reject missing/invalid/older source flow or power
 
 telemetry_health:
-  stale_retry_delays_seconds: [120, 300, 600]  # retry at 2, 5, and 10 minutes after a stale poll
+  stale_retry_delays_seconds: []      # routine polling already retries unchanged cloud data
   stale_alert_after_seconds: 5400              # 90 minutes without a new Pentair source sample
+
+# Shared dashboard and phone alert thresholds for independent return-flow readings.
+# Starting thresholds relative to the same-program 90th-percentile flow reference.
+dashboard_return_flow:
+  watch_loss_pct: 15
+  clean_loss_pct: 25
+  inspect_loss_pct: 40
+  consecutive_readings_required: 2
+  reminder_hours: 12
 
 thresholds:
   startup_grace_seconds: 120          # suppress alerts for 2 min after pump starts

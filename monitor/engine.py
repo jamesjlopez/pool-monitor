@@ -21,10 +21,6 @@ from .types import AlertLevel, EngineResult, PumpStatus
 log = logging.getLogger(__name__)
 
 
-UNCALIBRATED_WARN_RATIO = 0.30
-UNCALIBRATED_CRITICAL_RATIO = 0.60
-
-
 class Engine:
     def __init__(self, config: dict):
         self._cfg = config["thresholds"]
@@ -267,51 +263,9 @@ class Engine:
                 baseline_watts_per_gph=baseline,
             )
 
-        # Preserve the ratio heuristic only for older/test telemetry that lacks
-        # direct pressure. Live Pentair samples use the two direct signals above.
-        if baseline:
-            deviation_pct = ((ratio - baseline) / baseline) * 100
-            emergency_pct = scfg.get("emergency_ratio_pct", 80)
-            alert_pct = scfg.get("alert_ratio_pct", 30)
-
-            if deviation_pct >= emergency_pct:
-                level = AlertLevel.CRITICAL
-                reason = (
-                    f"Extreme backpressure: efficiency ratio {ratio:.4f} W/GPH is "
-                    f"{deviation_pct:.0f}% above baseline {baseline:.4f} — "
-                    f"filter critically clogged or blockage"
-                )
-            elif deviation_pct >= alert_pct:
-                level = AlertLevel.WARN
-                reason = (
-                    f"Elevated backpressure: efficiency ratio {ratio:.4f} W/GPH is "
-                    f"{deviation_pct:.0f}% above baseline {baseline:.4f} — "
-                    f"consider rinsing filter"
-                )
-            else:
-                reason = f"Normal — ratio {ratio:.4f} W/GPH ({deviation_pct:+.0f}% vs baseline)"
-        else:
-            if ratio >= UNCALIBRATED_CRITICAL_RATIO:
-                level = AlertLevel.CRITICAL
-                reason = (
-                    f"Severely restricted flow: efficiency ratio {ratio:.4f} W/GPH "
-                    f"without a calibrated baseline — set baseline_watts_per_gph after next backwash"
-                )
-            elif ratio >= UNCALIBRATED_WARN_RATIO:
-                level = AlertLevel.WARN
-                reason = (
-                    f"Restricted flow: efficiency ratio {ratio:.4f} W/GPH "
-                    f"without a calibrated baseline — set baseline_watts_per_gph after next backwash"
-                )
-            else:
-                reason = (
-                    f"Flow {status.flow_gph:.0f} GPH, power {status.power_watts:.0f}W "
-                    f"(no baseline — set baseline_watts_per_gph in config.yaml after next backwash)"
-                )
-
         return EngineResult(
             level=level,
-            reason=reason,
+            reason="; ".join(direct_signals) or "Return flow monitored; pressure unavailable",
             speed_mode=status.speed_mode,
             watts_per_gph=ratio,
             baseline_watts_per_gph=baseline,

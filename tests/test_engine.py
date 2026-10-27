@@ -260,6 +260,7 @@ class TestWarnThreshold:
                 is_running=True,
                 speed_mode="high",
                 telemetry_version=str(version),
+                pressure_psi=31,
             ))
             for version in range(3)
         ]
@@ -294,14 +295,14 @@ class TestCriticalThreshold:
     def test_critical_fires_on_extreme_clogging(self):
         engine = Engine(CALIBRATED_CONFIG)
         # ratio = 195/500 = 0.390, baseline = 0.083, deviation = +370% → above 80% emergency
-        extreme = make_status(rpm=1050, watts=195, gph=500)
+        extreme = make_status(rpm=1050, watts=195, gph=500, pressure=19)
         results = feed_n(engine, extreme, 3)
         assert results[-1].level == AlertLevel.CRITICAL
 
     def test_high_speed_critical(self):
         engine = Engine(CALIBRATED_CONFIG)
         # ratio = 780/2100 = 0.371, baseline = 0.143, deviation = +160% → above 80%
-        extreme = make_status(rpm=2800, watts=780, gph=2100)
+        extreme = make_status(rpm=2800, watts=780, gph=2100, pressure=31)
         results = feed_n(engine, extreme, 3)
         assert results[-1].level == AlertLevel.CRITICAL
 
@@ -387,7 +388,18 @@ class TestRollingWindow:
     def test_warn_does_not_escalate_to_critical(self):
         engine = Engine(CALIBRATED_CONFIG)
         # ratio just above alert threshold, below emergency
-        mild_clog = make_status(rpm=1050, watts=160, gph=1200)  # ratio ~0.133, +60% above 0.083
+        mild_clog = make_status(rpm=1050, watts=160, gph=1200, pressure=13)  # ratio ~0.133, +60% above 0.083
         results = feed_n(engine, mild_clog, 3)
         assert results[-1].level == AlertLevel.WARN
         assert results[-1].level != AlertLevel.CRITICAL
+
+
+def test_legacy_ratio_never_triggers_an_alert():
+    config = {**CALIBRATED_CONFIG, 'thresholds': {
+        **CALIBRATED_CONFIG['thresholds'],
+        'low_speed': {**CALIBRATED_CONFIG['thresholds']['low_speed'], 'baseline_flow_gph': None},
+    }}
+    engine = Engine(config)
+    result = feed_n(engine, make_status(watts=5000, gph=1800), 4)[-1]
+    assert result.level == AlertLevel.NORMAL
+    assert not result.pending_elevated

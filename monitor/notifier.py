@@ -103,8 +103,8 @@ class NtfyNotifier:
                 ["rotating_light", "no_entry"],
             )
         return (
-            "Pool Filter Alert",
-            f"\u26a0\ufe0f {reason}\n\n{status_summary}\n\nCheck and rinse filter.\n\n{DASHBOARD_URL}",
+            "Pool Flow / Pressure Alert",
+            f"\u26a0\ufe0f {reason}\n\n{status_summary}\n\nCheck baskets, water level, and filter as appropriate.\n\n{DASHBOARD_URL}",
             self._priority_alert,
             ["warning"],
         )

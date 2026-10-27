@@ -7,6 +7,77 @@ import pytest
 from monitor.api_client import MockPentairClient, _extract, _fixture_to_status, _parse_status
 from monitor.types import PumpStatus
 
+
+class TestPollingBackoff:
+    @pytest.fixture
+    def client(self, mocker):
+        from monitor.api_client import PentairCloudClient
+        mocker.patch.object(PentairCloudClient, "_authenticate")
+        mocker.patch.object(PentairCloudClient, "_refresh_if_needed")
+        client = PentairCloudClient({"pentair": {"email": "test", "password": "test"}})
+        client._device_id = "test-device"
+        return client
+
+    @pytest.mark.parametrize("header,delay", [(None, 300), ("900", 900), ("bad", 300),
+                                             ("0", 300), ("7200", 7200),
+                                             ("NaN", 300), ("inf", 300)])
+    def test_rate_limit_suppresses_requests_until_deadline(self, client, mocker, header, delay):
+        import requests
+        response = requests.Response()
+        response.status_code = 429
+        if header is not None:
+            response.headers["Retry-After"] = header
+        fetch = mocker.patch.object(client, "_fetch_status", side_effect=requests.HTTPError(response=response))
+        clock = mocker.patch("monitor.api_client.time.monotonic", return_value=100)
+        assert client.get_status() is None
+        clock.return_value = 100 + delay - 1
+        assert client.get_status() is None
+        assert fetch.call_count == 1
+        clock.return_value = 100 + delay
+        client.get_status()
+        assert fetch.call_count == 2
+
+    def test_http_date_and_repeated_rejections_then_success(self, client, mocker):
+        import requests
+        from email.utils import formatdate
+        response = requests.Response()
+        response.status_code = 429
+        response.headers["Retry-After"] = formatdate(1900, usegmt=True)
+        mocker.patch("monitor.api_client.time.time", return_value=1000)
+        clock = mocker.patch("monitor.api_client.time.monotonic", return_value=100)
+        fetch = mocker.patch.object(client, "_fetch_status", side_effect=requests.HTTPError(response=response))
+        client.get_status()
+        assert client._poll_blocked_until == 1000
+        response.headers.clear()
+        clock.return_value = 1000
+        client.get_status()
+        assert client._poll_blocked_until == 1600
+        clock.return_value = 1600
+        fetch.side_effect = None
+        fetch.return_value = PumpStatus(0, 0, 0, False)
+        assert client.get_status() is not None
+        assert client._poll_rejections == 0
+
+    def test_poll_backoff_does_not_block_emergency_disable(self, client, mocker):
+        client._poll_blocked_until = float("inf")
+        control = mocker.patch.object(client, "_set_control", return_value=True)
+        assert client.set_pump_enabled(False)
+        control.assert_called_once_with({"d25": "0"})
+
+    def test_repeated_rejections_cap_fallback_at_one_hour(self, client, mocker):
+        mocker.patch("monitor.api_client.time.monotonic", return_value=100)
+        for _ in range(20):
+            client._back_off_polling(None)
+        assert client._poll_blocked_until == 3700
+
+    def test_other_http_errors_do_not_claim_rate_limiting(self, client, mocker):
+        import requests
+        response = requests.Response()
+        response.status_code = 500
+        mocker.patch.object(client, "_fetch_status", side_effect=requests.HTTPError(response=response))
+        assert client.get_status() is None
+        assert client._poll_blocked_until == 0
+
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

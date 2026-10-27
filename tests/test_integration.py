@@ -24,6 +24,7 @@ FULL_CONFIG = {
         "alert_cooldown_minutes": 30,
         "low_speed": {
             "alert_psi": 12,
+            "baseline_flow_gph": 1800, "flow_alert_drop_pct": 35,
             "emergency_psi": 18,
             "baseline_watts_per_gph": 0.083,
             "alert_ratio_pct": 30,
@@ -31,6 +32,7 @@ FULL_CONFIG = {
         },
         "high_speed": {
             "alert_psi": 20,
+            "baseline_flow_gph": 4200, "flow_alert_drop_pct": 35,
             "emergency_psi": 30,
             "baseline_watts_per_gph": 0.143,
             "alert_ratio_pct": 30,
